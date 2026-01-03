@@ -19,7 +19,7 @@ interface PhotoUploadProps {
 export function PhotoUpload({
 	photos,
 	onPhotosChange,
-	maxPhotos = 5,
+	maxPhotos = 10,
 	className,
 }: PhotoUploadProps) {
 	const { t } = useLanguage();

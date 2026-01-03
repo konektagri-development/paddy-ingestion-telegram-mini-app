@@ -13,6 +13,7 @@ export interface TelegramUser {
 
 export function useTelegramUser() {
 	const [user, setUser] = useState<TelegramUser | null>(null);
+	const [initDataRaw, setInitDataRaw] = useState<string | null>(null);
 	const [isLoading, setIsLoading] = useState(true);
 
 	useEffect(() => {
@@ -21,6 +22,35 @@ export function useTelegramUser() {
 				const { retrieveLaunchParams } = await import("@tma.js/sdk");
 
 				const launchParams = retrieveLaunchParams();
+
+				// In @tma.js/sdk, initDataRaw might be retrieved differently or missing
+				// Let's try to get it from the window location hash directly as a fallback
+				let rawData: string | undefined;
+
+				const sdkRaw = launchParams.initDataRaw;
+				if (typeof sdkRaw === "string" && sdkRaw.length > 0) {
+					rawData = sdkRaw;
+				}
+
+				if (!rawData) {
+					// Fallback 1: extract from URL hash
+					const hash = window.location.hash.slice(1);
+					const hashParams = new URLSearchParams(hash);
+					const hashData = hashParams.get("tgWebAppData");
+					if (hashData) rawData = hashData;
+
+					// Fallback 2: extract from URL search (query params)
+					if (!rawData) {
+						const searchParams = new URLSearchParams(window.location.search);
+						const searchData = searchParams.get("tgWebAppData");
+						if (searchData) rawData = searchData;
+					}
+				}
+
+				if (rawData) {
+					setInitDataRaw(rawData);
+				}
+
 				const webAppData = launchParams.tgWebAppData;
 
 				// tgWebAppData contains user info
@@ -58,5 +88,5 @@ export function useTelegramUser() {
 		getTelegramUser();
 	}, []);
 
-	return { user, isLoading };
+	return { user, initDataRaw, isLoading };
 }

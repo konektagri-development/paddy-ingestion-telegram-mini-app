@@ -26,6 +26,14 @@ export interface FertilizerData {
 	};
 }
 
+export interface PesticideData {
+	used: "yes" | "no" | "dontRemember" | null;
+}
+
+export interface HerbicideData {
+	used: "yes" | "no" | "dontRemember" | null;
+}
+
 export interface StressEvents {
 	flood: boolean;
 	drought: boolean;
@@ -70,8 +78,8 @@ export interface FormData {
 	visibleProblems: VisibleProblems;
 
 	fertilizer: FertilizerData;
-	herbicide: "yes" | "no" | "dontRemember" | null;
-	pesticide: "yes" | "no" | "dontRemember" | null;
+	herbicide: HerbicideData;
+	pesticide: PesticideData;
 
 	stressEvents: StressEvents;
 	photos: PhotoData[];
@@ -115,8 +123,12 @@ export const initialFormData: FormData = {
 			otherType: "",
 		},
 	},
-	herbicide: null,
-	pesticide: null,
+	herbicide: {
+		used: null,
+	},
+	pesticide: {
+		used: null,
+	},
 
 	stressEvents: {
 		flood: false,
