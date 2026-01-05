@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Send, Wheat } from "lucide-react";
+import { Check, RefreshCw, Send, Wheat, WifiOff } from "lucide-react";
 import { useCallback, useState } from "react";
 import { BasicInfoSection } from "@/components/form/basic-info-section";
 import { FertilizerSection } from "@/components/form/fertilizer-section";
@@ -17,20 +17,18 @@ import { WaterStatusSection } from "@/components/form/water-status-section";
 import { triggerHaptic } from "@/components/telegram-provider";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import { useFormPersistence } from "@/hooks/use-form-persistence";
+import { useOnlineStatus } from "@/hooks/use-online-status";
 import { useTelegramUser } from "@/hooks/use-telegram-user";
 import type { FormData } from "@/lib/form-types";
-import { initialFormData } from "@/lib/form-types";
 import { useLanguage } from "@/lib/i18n/language-context";
 
 export function FarmVisitForm() {
 	const { t, language, setLanguage } = useLanguage();
 	const { user, initDataRaw } = useTelegramUser();
-	const [formData, setFormData] = useState<FormData>(initialFormData);
+	const { isOnline, pendingCount, saveForOffline } = useOnlineStatus();
+	const { formData, updateFormData, clearSavedData } = useFormPersistence();
 	const [isSubmitted, setIsSubmitted] = useState(false);
-
-	const updateFormData = useCallback((data: Partial<FormData>) => {
-		setFormData((prev) => ({ ...prev, ...data }));
-	}, []);
 
 	// Validation rules with corresponding section IDs
 	const getFirstInvalidField = useCallback((): {
@@ -58,11 +56,11 @@ export function FarmVisitForm() {
 		if (!formData.growthStage) {
 			return { id: "section-growth", message: "Growth stage is needed" };
 		}
-		if (!formData.waterStatus) {
-			return { id: "section-water", message: "Water level is needed" };
-		}
 		if (!formData.overallHealth) {
 			return { id: "section-health", message: "Crop health is needed" };
+		}
+		if (!formData.waterStatus) {
+			return { id: "section-water", message: "Water level is needed" };
 		}
 		if (formData.fertilizer.used === null) {
 			return {
@@ -104,7 +102,7 @@ export function FarmVisitForm() {
 		}
 	}, []);
 
-	const handleSubmit = () => {
+	const handleSubmit = async () => {
 		// Check for validation errors first
 		const invalidField = getFirstInvalidField();
 		if (invalidField) {
@@ -127,16 +125,6 @@ export function FarmVisitForm() {
 				fallow: "Fallow",
 			};
 			return stage ? stageMap[stage] || "N/A" : "N/A";
-		};
-
-		const getWaterStatusText = (status: FormData["waterStatus"]): string => {
-			const statusMap: Record<string, string> = {
-				alwaysFlooded: "Consistently flooded",
-				mostlyWet: "Mostly wet, occasional drying",
-				frequentlyDry: "Often dry",
-				veryDry: "Very dry / cracked",
-			};
-			return status ? statusMap[status] || "N/A" : "N/A";
 		};
 
 		const getHealthText = (health: FormData["overallHealth"]): string => {
@@ -187,6 +175,16 @@ export function FarmVisitForm() {
 			if (problems.unevenGrowth) items.push("Uneven Growth");
 			if (problems.other) items.push(problems.otherDescription || "Other");
 			return items.length > 0 ? items.join(", ") : "None";
+		};
+
+		const getWaterStatusText = (status: FormData["waterStatus"]): string => {
+			const statusMap: Record<string, string> = {
+				alwaysFlooded: "Consistently flooded",
+				mostlyWet: "Mostly wet, occasional drying",
+				frequentlyDry: "Often dry",
+				veryDry: "Very dry / cracked",
+			};
+			return status ? statusMap[status] || "N/A" : "N/A";
 		};
 
 		const getFertilizerTypeText = (
@@ -249,16 +247,16 @@ export function FarmVisitForm() {
 			getGrowthStageText(formData.growthStage),
 		);
 		submitFormData.append(
-			"waterStatus",
-			getWaterStatusText(formData.waterStatus),
-		);
-		submitFormData.append(
 			"overallHealth",
 			getHealthText(formData.overallHealth),
 		);
 		submitFormData.append(
 			"visibleProblems",
 			getVisibleProblemsText(formData.visibleProblems),
+		);
+		submitFormData.append(
+			"waterStatus",
+			getWaterStatusText(formData.waterStatus),
 		);
 		submitFormData.append("fertilizer", getYesNoText(formData.fertilizer.used));
 		submitFormData.append(
@@ -296,23 +294,68 @@ export function FarmVisitForm() {
 		const apiUrl =
 			process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000/api/v3";
 
+		// If offline, save to IndexedDB for later sync
+		if (!isOnline) {
+			const offlineData = {
+				dateOfVisit: new Date().toISOString().split("T")[0],
+				gpsLatitude: formData.gpsLatitude,
+				gpsLongitude: formData.gpsLongitude,
+				farmNumber: formData.farmNumber,
+				rainfall: formData.rainfall2days ? "Yes" : "No",
+				rainfallIntensity: formData.rainfallIntensity,
+				soilRoughness: formData.soilRoughness,
+				growthStage: formData.growthStage,
+				overallHealth: formData.overallHealth,
+				waterStatus: formData.waterStatus,
+				fertilizer: formData.fertilizer.used,
+				herbicide: formData.herbicide.used,
+				pesticide: formData.pesticide.used,
+				telegramUserId: user?.id?.toString(),
+				telegramUsername: user?.username,
+			};
+
+			await saveForOffline(offlineData);
+			triggerHaptic("success");
+			setIsSubmitted(true);
+			return;
+		}
+
 		fetch(`${apiUrl}/paddy-farm-survey`, {
 			method: "POST",
 			headers,
 			body: submitFormData,
-		}).catch((error) => {
-			// Log error silently - user already sees success
-			console.error("Background submission failed:", error);
-		});
+		})
+			.then((response) => {
+				if (!response.ok && response.status !== 401) {
+					// Non-401 errors - save for retry (e.g., 500, 503)
+					throw new Error(`Server error: ${response.status}`);
+				}
+				// 401 = auth error, don't save for retry (it will keep failing)
+				// 2xx = success, no action needed
+			})
+			.catch(async (error) => {
+				// Network error or non-401 server error - save offline for retry
+				console.error("Background submission failed:", error);
+				const offlineData = {
+					dateOfVisit: new Date().toISOString().split("T")[0],
+					gpsLatitude: formData.gpsLatitude,
+					gpsLongitude: formData.gpsLongitude,
+					farmNumber: formData.farmNumber,
+					rainfall: formData.rainfall2days ? "Yes" : "No",
+					telegramUserId: user?.id?.toString(),
+				};
+				await saveForOffline(offlineData);
+			});
 
-		// Immediately show success to user
+		// Immediately show success to user and clear saved draft
 		triggerHaptic("success");
+		clearSavedData();
 		setIsSubmitted(true);
 	};
 
 	const handleNewForm = () => {
 		triggerHaptic("light");
-		setFormData(initialFormData);
+		clearSavedData();
 		setIsSubmitted(false);
 		window.scrollTo({ top: 0, behavior: "smooth" });
 	};
@@ -346,19 +389,19 @@ export function FarmVisitForm() {
 
 	return (
 		<div className="min-h-screen bg-background pb-32">
-				{/* Header */}
+			{/* Header */}
 			<header className="relative overflow-hidden bg-gradient-to-br from-primary via-primary to-primary/90 text-primary-foreground">
 				{/* Decorative background elements */}
 				<div className="absolute inset-0 opacity-10">
 					<div className="absolute -top-8 -right-8 w-32 h-32 rounded-full bg-white/20 blur-2xl" />
 					<div className="absolute -bottom-4 -left-4 w-24 h-24 rounded-full bg-white/10 blur-xl" />
 				</div>
-				
+
 				<div className="relative p-4">
 					<div className="flex items-center justify-between gap-3">
 						{/* Logo and Title */}
 						<div className="flex items-center gap-3 flex-1 min-w-0">
-								<Wheat className="w-8 h-8" />
+							<Wheat className="w-8 h-8" />
 							<div className="min-w-0">
 								<h1 className="text-lg font-bold tracking-tight truncate">
 									{t.header.title}
@@ -368,7 +411,7 @@ export function FarmVisitForm() {
 								</p>
 							</div>
 						</div>
-						
+
 						{/* Language Toggle */}
 						<button
 							type="button"
@@ -381,6 +424,26 @@ export function FarmVisitForm() {
 							{language === "en" ? "🇰🇭" : "🇬🇧"}
 						</button>
 					</div>
+
+					{/* Offline Status Indicator */}
+					{(!isOnline || pendingCount > 0) && (
+						<div className="flex items-center gap-2 mt-2 px-3 py-1.5 rounded-lg bg-white/10 backdrop-blur-sm text-sm">
+							{!isOnline ? (
+								<>
+									<WifiOff className="w-4 h-4 text-yellow-300" />
+									<span className="text-yellow-100">Offline mode</span>
+								</>
+							) : pendingCount > 0 ? (
+								<>
+									<RefreshCw className="w-4 h-4 text-blue-300 animate-spin" />
+									<span className="text-blue-100">
+										Syncing {pendingCount} record{pendingCount > 1 ? "s" : ""}
+										...
+									</span>
+								</>
+							) : null}
+						</div>
+					)}
 				</div>
 			</header>
 
@@ -394,11 +457,11 @@ export function FarmVisitForm() {
 				<Separator />
 				<GrowthStageSection data={formData} onChange={updateFormData} />
 				<Separator />
-				<WaterStatusSection data={formData} onChange={updateFormData} />
-				<Separator />
 				<HealthSection data={formData} onChange={updateFormData} />
 				<Separator />
 				<ProblemsSection data={formData} onChange={updateFormData} />
+				<Separator />
+				<WaterStatusSection data={formData} onChange={updateFormData} />
 				<Separator />
 				<FertilizerSection data={formData} onChange={updateFormData} />
 				<Separator />

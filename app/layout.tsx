@@ -25,6 +25,9 @@ export const metadata: Metadata = {
 	description:
 		"Telegram Mini App for collecting rice field data during recurring visits",
 	applicationName: "Rice Field Data Collector",
+	formatDetection: {
+		telephone: false,
+	},
 };
 
 export const viewport: Viewport = {
@@ -33,6 +36,7 @@ export const viewport: Viewport = {
 	maximumScale: 1,
 	userScalable: false,
 	viewportFit: "cover",
+	themeColor: "#16a34a",
 };
 
 export default function RootLayout({
@@ -42,6 +46,9 @@ export default function RootLayout({
 }>) {
 	return (
 		<html lang="en" className={notoSans.variable}>
+			<head>
+				<meta name="theme-color" content="#16a34a" />
+			</head>
 			<body
 				className={`${geistSans.variable} ${geistMono.variable} antialiased`}
 			>

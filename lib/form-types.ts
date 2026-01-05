@@ -67,15 +67,15 @@ export interface FormData {
 		| "harvestReady"
 		| "fallow"
 		| null;
+
+	overallHealth: "excellent" | "good" | "fair" | "poor" | null;
+	visibleProblems: VisibleProblems;
 	waterStatus:
 		| "alwaysFlooded"
 		| "mostlyWet"
 		| "frequentlyDry"
 		| "veryDry"
 		| null;
-
-	overallHealth: "excellent" | "good" | "fair" | "poor" | null;
-	visibleProblems: VisibleProblems;
 
 	fertilizer: FertilizerData;
 	herbicide: HerbicideData;
@@ -95,7 +95,6 @@ export const initialFormData: FormData = {
 	soilRoughness: null,
 
 	growthStage: null,
-	waterStatus: null,
 
 	overallHealth: null,
 	visibleProblems: {
@@ -112,6 +111,7 @@ export const initialFormData: FormData = {
 		other: false,
 		otherDescription: "",
 	},
+	waterStatus: null,
 
 	fertilizer: {
 		used: null,
