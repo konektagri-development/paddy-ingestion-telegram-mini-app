@@ -39,12 +39,26 @@ export function useOnlineStatus() {
 					const apiUrl =
 						process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000/api/v3";
 
+					// Extract init data for authentication (stored with offline data)
+					const initDataRaw = submission.formData._initDataRaw as
+						| string
+						| undefined;
+
+					// Prepare form data without the internal _initDataRaw field
+					const { _initDataRaw, ...formDataToSend } = submission.formData;
+
+					// Build headers with authentication if available
+					const headers: Record<string, string> = {
+						"Content-Type": "application/json",
+					};
+					if (initDataRaw) {
+						headers["X-Telegram-Init-Data"] = initDataRaw;
+					}
+
 					const response = await fetch(`${apiUrl}/paddy-farm-survey`, {
 						method: "POST",
-						headers: {
-							"Content-Type": "application/json",
-						},
-						body: JSON.stringify(submission.formData),
+						headers,
+						body: JSON.stringify(formDataToSend),
 					});
 
 					if (response.ok) {

@@ -324,6 +324,8 @@ export function FarmVisitForm() {
 				stressEvents: getStressEventsText(formData.stressEvents),
 				telegramUserId: user?.id?.toString(),
 				telegramUsername: user?.username,
+				// Include init data for authentication when syncing back online
+				_initDataRaw: initDataRaw,
 			};
 
 			await saveForOffline(offlineData);
@@ -388,6 +390,8 @@ export function FarmVisitForm() {
 					stressEvents: getStressEventsText(formData.stressEvents),
 					telegramUserId: user?.id?.toString(),
 					telegramUsername: user?.username,
+					// Include init data for authentication when syncing back online
+					_initDataRaw: initDataRaw,
 				};
 				await saveForOffline(offlineData);
 			}
