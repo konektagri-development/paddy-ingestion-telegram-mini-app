@@ -3,7 +3,7 @@
 import { Droplets } from "lucide-react";
 import { SectionCard } from "@/components/form/section-card";
 import { CheckboxGroup } from "@/components/ui/checkbox-group";
-import type { FormData } from "@/lib/form-types";
+import type { FormData, WaterStatus } from "@/lib/form-types";
 import { useLanguage } from "@/lib/i18n/language-context";
 
 interface WaterStatusSectionProps {
@@ -17,24 +17,30 @@ export function WaterStatusSection({
 }: WaterStatusSectionProps) {
 	const { t } = useLanguage();
 
-	const WATER_STATUS_OPTIONS = [
+	// Using WaterStatus type ensures values match the FormData type
+	// TypeScript will error if you use a wrong value like "flooded"
+	const WATER_STATUS_OPTIONS: Array<{
+		value: WaterStatus;
+		label: string;
+		description: string;
+	}> = [
 		{
-			value: "flooded",
+			value: "alwaysFlooded",
 			label: t.sections.water.alwaysFlooded.label,
 			description: t.sections.water.alwaysFlooded.description,
 		},
 		{
-			value: "saturated",
+			value: "mostlyWet",
 			label: t.sections.water.mostlyWet.label,
 			description: t.sections.water.mostlyWet.description,
 		},
 		{
-			value: "dry",
+			value: "frequentlyDry",
 			label: t.sections.water.frequentlyDry.label,
 			description: t.sections.water.frequentlyDry.description,
 		},
 		{
-			value: "very_dry",
+			value: "veryDry",
 			label: t.sections.water.veryDry.label,
 			description: t.sections.water.veryDry.description,
 		},
@@ -51,9 +57,7 @@ export function WaterStatusSection({
 				name="waterStatus"
 				options={WATER_STATUS_OPTIONS}
 				value={data.waterStatus}
-				onChange={(val) =>
-					onChange({ waterStatus: val as FormData["waterStatus"] })
-				}
+				onChange={(val) => onChange({ waterStatus: val as WaterStatus })}
 			/>
 		</SectionCard>
 	);

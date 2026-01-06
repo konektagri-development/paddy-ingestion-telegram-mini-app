@@ -49,14 +49,9 @@ export function useOnlineStatus() {
 
 					if (response.ok) {
 						await removeSubmission(submission.id);
-						console.log("[useOnlineStatus] Synced submission:", submission.id);
 					} else if (response.status === 401) {
 						// Auth error - remove from queue, retrying won't help
 						await removeSubmission(submission.id);
-						console.log(
-							"[useOnlineStatus] Removed submission due to 401:",
-							submission.id,
-						);
 					}
 					// Other errors (500, 503, etc.) - keep in queue for retry
 				} catch (error) {

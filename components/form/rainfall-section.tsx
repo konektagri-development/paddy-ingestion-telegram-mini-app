@@ -3,7 +3,7 @@
 import { CloudRain } from "lucide-react";
 import { SectionCard } from "@/components/form/section-card";
 import { CheckboxGroup } from "@/components/ui/checkbox-group";
-import type { FormData } from "@/lib/form-types";
+import type { FormData, RainfallIntensity } from "@/lib/form-types";
 import { useLanguage } from "@/lib/i18n/language-context";
 
 interface RainfallSectionProps {
@@ -14,7 +14,11 @@ interface RainfallSectionProps {
 export function RainfallSection({ data, onChange }: RainfallSectionProps) {
 	const { t } = useLanguage();
 
-	const RAINFALL_OPTIONS = [
+	// Using RainfallIntensity type ensures values match the FormData type
+	const RAINFALL_INTENSITY_OPTIONS: Array<{
+		value: RainfallIntensity;
+		label: string;
+	}> = [
 		{ value: "heavy", label: t.sections.rainfall.heavy },
 		{ value: "moderate", label: t.sections.rainfall.moderate },
 		{ value: "low", label: t.sections.rainfall.low },
@@ -58,12 +62,10 @@ export function RainfallSection({ data, onChange }: RainfallSectionProps) {
 						</label>
 						<CheckboxGroup
 							name="rainfallIntensity"
-							options={RAINFALL_OPTIONS}
+							options={RAINFALL_INTENSITY_OPTIONS}
 							value={data.rainfallIntensity || null}
 							onChange={(val) =>
-								onChange({
-									rainfallIntensity: val as FormData["rainfallIntensity"],
-								})
+								onChange({ rainfallIntensity: val as RainfallIntensity })
 							}
 						/>
 					</div>

@@ -4,7 +4,7 @@ import { Check, Sprout } from "lucide-react";
 import Image from "next/image";
 import { SectionCard } from "@/components/form/section-card";
 import { triggerHaptic } from "@/components/telegram-provider";
-import type { FormData } from "@/lib/form-types";
+import type { FormData, GrowthStage } from "@/lib/form-types";
 import { useLanguage } from "@/lib/i18n/language-context";
 import { cn } from "@/lib/utils";
 
@@ -13,54 +13,71 @@ interface GrowthStageSectionProps {
 	onChange: (data: Partial<FormData>) => void;
 }
 
+// Type-safe mapping of growth stage values to images
+const GROWTH_STAGE_IMAGES: Record<GrowthStage, string> = {
+	landPrep: "/images/growth/land_prep.jpeg",
+	recentlyTransplanted: "/images/growth/seedling.jpeg",
+	tilleringOnset: "/images/growth/tillering.jpeg",
+	flowering: "/images/growth/flowering.jpeg",
+	ripening: "/images/growth/ripening.jpeg",
+	harvestReady: "/images/growth/harvest.jpeg",
+	fallow: "/images/growth/fallow.jpeg",
+};
+
 export function GrowthStageSection({
 	data,
 	onChange,
 }: GrowthStageSectionProps) {
 	const { t } = useLanguage();
 
-	const GROWTH_STAGES = [
+	// Using GrowthStage type ensures values match the FormData type
+	const GROWTH_STAGES: Array<{
+		value: GrowthStage;
+		label: string;
+		description: string;
+		image: string;
+	}> = [
 		{
-			value: "land_preparation",
+			value: "landPrep",
 			label: t.sections.growth.landPrep.label,
 			description: t.sections.growth.landPrep.description,
-			image: "/images/growth/land_prep.jpeg",
+			image: GROWTH_STAGE_IMAGES.landPrep,
 		},
 		{
-			value: "seedling",
+			value: "recentlyTransplanted",
 			label: t.sections.growth.recentlyTransplanted.label,
 			description: t.sections.growth.recentlyTransplanted.description,
-			image: "/images/growth/seedling.jpeg",
+			image: GROWTH_STAGE_IMAGES.recentlyTransplanted,
 		},
 		{
-			value: "tillering",
+			value: "tilleringOnset",
 			label: t.sections.growth.tilleringOnset.label,
 			description: t.sections.growth.tilleringOnset.description,
-			image: "/images/growth/tillering.jpeg",
+			image: GROWTH_STAGE_IMAGES.tilleringOnset,
 		},
 		{
 			value: "flowering",
 			label: t.sections.growth.flowering.label,
 			description: t.sections.growth.flowering.description,
-			image: "/images/growth/flowering.jpeg",
+			image: GROWTH_STAGE_IMAGES.flowering,
 		},
 		{
 			value: "ripening",
 			label: t.sections.growth.ripening.label,
 			description: t.sections.growth.ripening.description,
-			image: "/images/growth/ripening.jpeg",
+			image: GROWTH_STAGE_IMAGES.ripening,
 		},
 		{
-			value: "harvest_ready",
+			value: "harvestReady",
 			label: t.sections.growth.harvestReady.label,
 			description: t.sections.growth.harvestReady.description,
-			image: "/images/growth/harvest.jpeg",
+			image: GROWTH_STAGE_IMAGES.harvestReady,
 		},
 		{
 			value: "fallow",
 			label: t.sections.growth.fallow.label,
 			description: t.sections.growth.fallow.description,
-			image: "/images/growth/fallow.jpeg",
+			image: GROWTH_STAGE_IMAGES.fallow,
 		},
 	];
 
@@ -79,16 +96,12 @@ export function GrowthStageSection({
 							key={option.value}
 							onClick={() => {
 								triggerHaptic("light");
-								onChange({
-									growthStage: option.value as FormData["growthStage"],
-								});
+								onChange({ growthStage: option.value });
 							}}
 							onKeyDown={(e) => {
 								if (e.key === "Enter" || e.key === " ") {
 									e.preventDefault();
-									onChange({
-										growthStage: option.value as FormData["growthStage"],
-									});
+									onChange({ growthStage: option.value });
 								}
 							}}
 							role="button"

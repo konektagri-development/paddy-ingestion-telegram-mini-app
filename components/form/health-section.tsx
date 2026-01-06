@@ -4,7 +4,7 @@ import { Check, Heart } from "lucide-react";
 import Image from "next/image";
 import { SectionCard } from "@/components/form/section-card";
 import { triggerHaptic } from "@/components/telegram-provider";
-import type { FormData } from "@/lib/form-types";
+import type { FormData, OverallHealth } from "@/lib/form-types";
 import { useLanguage } from "@/lib/i18n/language-context";
 import { cn } from "@/lib/utils";
 
@@ -13,33 +13,47 @@ interface HealthSectionProps {
 	onChange: (data: Partial<FormData>) => void;
 }
 
+// Type-safe mapping of health values to images
+const HEALTH_IMAGES: Record<OverallHealth, string> = {
+	excellent: "/images/health/excellent.jpeg",
+	good: "/images/health/good.jpeg",
+	fair: "/images/health/fair.jpeg",
+	poor: "/images/health/poor.jpeg",
+};
+
 export function HealthSection({ data, onChange }: HealthSectionProps) {
 	const { t } = useLanguage();
 
-	const HEALTH_OPTIONS = [
+	// Using OverallHealth type ensures values match the FormData type
+	const HEALTH_OPTIONS: Array<{
+		value: OverallHealth;
+		label: string;
+		description: string;
+		image: string;
+	}> = [
 		{
 			value: "excellent",
 			label: t.sections.health.excellent.label,
 			description: t.sections.health.excellent.description,
-			image: "/images/health/excellent.jpeg",
+			image: HEALTH_IMAGES.excellent,
 		},
 		{
 			value: "good",
 			label: t.sections.health.good.label,
 			description: t.sections.health.good.description,
-			image: "/images/health/good.jpeg",
+			image: HEALTH_IMAGES.good,
 		},
 		{
 			value: "fair",
 			label: t.sections.health.fair.label,
 			description: t.sections.health.fair.description,
-			image: "/images/health/fair.jpeg",
+			image: HEALTH_IMAGES.fair,
 		},
 		{
 			value: "poor",
 			label: t.sections.health.poor.label,
 			description: t.sections.health.poor.description,
-			image: "/images/health/poor.jpeg",
+			image: HEALTH_IMAGES.poor,
 		},
 	];
 
@@ -58,16 +72,12 @@ export function HealthSection({ data, onChange }: HealthSectionProps) {
 							key={option.value}
 							onClick={() => {
 								triggerHaptic("light");
-								onChange({
-									overallHealth: option.value as FormData["overallHealth"],
-								});
+								onChange({ overallHealth: option.value });
 							}}
 							onKeyDown={(e) => {
 								if (e.key === "Enter" || e.key === " ") {
 									e.preventDefault();
-									onChange({
-										overallHealth: option.value as FormData["overallHealth"],
-									});
+									onChange({ overallHealth: option.value });
 								}
 							}}
 							role="button"

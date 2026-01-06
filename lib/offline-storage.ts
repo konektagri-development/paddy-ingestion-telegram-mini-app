@@ -69,7 +69,6 @@ export async function saveOfflineSubmission(
 		const request = store.add(submission);
 
 		request.onsuccess = () => {
-			console.log("[OfflineStorage] Saved submission:", submission.id);
 			resolve(submission.id);
 		};
 
@@ -117,7 +116,6 @@ export async function removeSubmission(id: string): Promise<void> {
 		const request = store.delete(id);
 
 		request.onsuccess = () => {
-			console.log("[OfflineStorage] Removed submission:", id);
 			resolve();
 		};
 
@@ -200,7 +198,6 @@ export async function registerBackgroundSync(): Promise<void> {
 					sync: { register: (tag: string) => Promise<void> };
 				}
 			).sync.register("sync-form-submissions");
-			console.log("[OfflineStorage] Background sync registered");
 		} catch (error) {
 			console.error(
 				"[OfflineStorage] Background sync registration failed:",

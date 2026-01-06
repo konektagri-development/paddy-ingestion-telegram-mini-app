@@ -4,7 +4,7 @@ import { Check, Layers } from "lucide-react";
 import Image from "next/image";
 import { SectionCard } from "@/components/form/section-card";
 import { triggerHaptic } from "@/components/telegram-provider";
-import type { FormData } from "@/lib/form-types";
+import type { FormData, SoilRoughness } from "@/lib/form-types";
 import { useLanguage } from "@/lib/i18n/language-context";
 import { cn } from "@/lib/utils";
 
@@ -13,24 +13,36 @@ interface SoilSectionProps {
 	onChange: (data: Partial<FormData>) => void;
 }
 
+// Type-safe mapping of soil roughness values to images
+const SOIL_IMAGES: Record<SoilRoughness, string> = {
+	smooth: "/images/soil/smooth.jpeg",
+	medium: "/images/soil/medium.jpeg",
+	rough: "/images/soil/rough.jpeg",
+};
+
 export function SoilSection({ data, onChange }: SoilSectionProps) {
 	const { t } = useLanguage();
 
-	const SOIL_ROUGHNESS_OPTIONS = [
+	// Using SoilRoughness type ensures values match the FormData type
+	const SOIL_ROUGHNESS_OPTIONS: Array<{
+		value: SoilRoughness;
+		label: string;
+		image: string;
+	}> = [
 		{
 			value: "smooth",
 			label: t.sections.soil.smooth,
-			image: "/images/soil/smooth.jpeg",
+			image: SOIL_IMAGES.smooth,
 		},
 		{
 			value: "medium",
 			label: t.sections.soil.medium,
-			image: "/images/soil/medium.jpeg",
+			image: SOIL_IMAGES.medium,
 		},
 		{
 			value: "rough",
 			label: t.sections.soil.rough,
-			image: "/images/soil/rough.jpeg",
+			image: SOIL_IMAGES.rough,
 		},
 	];
 
@@ -49,16 +61,12 @@ export function SoilSection({ data, onChange }: SoilSectionProps) {
 							key={option.value}
 							onClick={() => {
 								triggerHaptic("light");
-								onChange({
-									soilRoughness: option.value as FormData["soilRoughness"],
-								});
+								onChange({ soilRoughness: option.value });
 							}}
 							onKeyDown={(e) => {
 								if (e.key === "Enter" || e.key === " ") {
 									e.preventDefault();
-									onChange({
-										soilRoughness: option.value as FormData["soilRoughness"],
-									});
+									onChange({ soilRoughness: option.value });
 								}
 							}}
 							role="button"

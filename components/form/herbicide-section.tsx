@@ -3,7 +3,8 @@
 import { Beaker } from "lucide-react";
 import { SectionCard } from "@/components/form/section-card";
 import { CheckboxGroup } from "@/components/ui/checkbox-group";
-import type { FormData } from "@/lib/form-types";
+import { useYesNoRememberOptions } from "@/lib/form-options";
+import type { FormData, YesNoRemember } from "@/lib/form-types";
 import { useLanguage } from "@/lib/i18n/language-context";
 
 interface HerbicideSectionProps {
@@ -13,12 +14,7 @@ interface HerbicideSectionProps {
 
 export function HerbicideSection({ data, onChange }: HerbicideSectionProps) {
 	const { t } = useLanguage();
-
-	const YES_NO_REMEMBER_OPTIONS = [
-		{ value: "yes", label: t.common.yes },
-		{ value: "no", label: t.common.no },
-		{ value: "dontRemember", label: t.common.dontRemember },
-	];
+	const yesNoRememberOptions = useYesNoRememberOptions();
 
 	return (
 		<SectionCard
@@ -29,11 +25,11 @@ export function HerbicideSection({ data, onChange }: HerbicideSectionProps) {
 		>
 			<CheckboxGroup
 				name="herbicide"
-				options={YES_NO_REMEMBER_OPTIONS}
+				options={yesNoRememberOptions}
 				value={data.herbicide.used}
 				onChange={(val) =>
 					onChange({
-						herbicide: { used: val as FormData["herbicide"]["used"] },
+						herbicide: { used: val as YesNoRemember },
 					})
 				}
 			/>

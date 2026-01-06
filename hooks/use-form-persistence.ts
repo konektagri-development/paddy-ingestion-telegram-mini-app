@@ -23,7 +23,6 @@ export function useFormPersistence() {
 			if (saved) {
 				const parsed = JSON.parse(saved) as FormData;
 				setFormData(parsed);
-				console.log("[FormPersistence] Restored form data from localStorage");
 			}
 		} catch (error) {
 			console.error("[FormPersistence] Failed to load saved data:", error);
@@ -47,7 +46,6 @@ export function useFormPersistence() {
 					photos: [], // Photos are handled separately
 				};
 				localStorage.setItem(STORAGE_KEY, JSON.stringify(dataToSave));
-				console.log("[FormPersistence] Saved form data to localStorage");
 			} catch (error) {
 				console.error("[FormPersistence] Failed to save data:", error);
 			}
@@ -71,7 +69,6 @@ export function useFormPersistence() {
 		try {
 			localStorage.removeItem(STORAGE_KEY);
 			setFormData(initialFormData);
-			console.log("[FormPersistence] Cleared saved form data");
 		} catch (error) {
 			console.error("[FormPersistence] Failed to clear data:", error);
 		}

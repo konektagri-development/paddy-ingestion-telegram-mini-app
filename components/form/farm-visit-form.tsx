@@ -1,6 +1,14 @@
 "use client";
 
-import { Check, RefreshCw, Send, Wheat, WifiOff } from "lucide-react";
+import {
+	AlertCircle,
+	Check,
+	Loader2,
+	RefreshCw,
+	Send,
+	Wheat,
+	WifiOff,
+} from "lucide-react";
 import { useCallback, useState } from "react";
 import { BasicInfoSection } from "@/components/form/basic-info-section";
 import { FertilizerSection } from "@/components/form/fertilizer-section";
@@ -29,6 +37,8 @@ export function FarmVisitForm() {
 	const { isOnline, pendingCount, saveForOffline } = useOnlineStatus();
 	const { formData, updateFormData, clearSavedData } = useFormPersistence();
 	const [isSubmitted, setIsSubmitted] = useState(false);
+	const [isSubmitting, setIsSubmitting] = useState(false);
+	const [submitError, setSubmitError] = useState<string | null>(null);
 
 	// Validation rules with corresponding section IDs
 	const getFirstInvalidField = useCallback((): {
@@ -284,7 +294,6 @@ export function FarmVisitForm() {
 			}
 		}
 
-		// Fire and forget - submit in background without waiting
 		// Include Telegram init data for backend validation
 		const headers: Record<string, string> = {};
 		if (initDataRaw) {
@@ -308,49 +317,83 @@ export function FarmVisitForm() {
 				overallHealth: formData.overallHealth,
 				waterStatus: formData.waterStatus,
 				fertilizer: formData.fertilizer.used,
+				fertilizerType: getFertilizerTypeText(formData.fertilizer),
 				herbicide: formData.herbicide.used,
 				pesticide: formData.pesticide.used,
+				visibleProblems: getVisibleProblemsText(formData.visibleProblems),
+				stressEvents: getStressEventsText(formData.stressEvents),
 				telegramUserId: user?.id?.toString(),
 				telegramUsername: user?.username,
 			};
 
 			await saveForOffline(offlineData);
 			triggerHaptic("success");
+			clearSavedData();
 			setIsSubmitted(true);
 			return;
 		}
 
-		fetch(`${apiUrl}/paddy-farm-survey`, {
-			method: "POST",
-			headers,
-			body: submitFormData,
-		})
-			.then((response) => {
-				if (!response.ok && response.status !== 401) {
-					// Non-401 errors - save for retry (e.g., 500, 503)
-					throw new Error(`Server error: ${response.status}`);
+		// Submit with proper error handling - wait for response before showing success
+		setIsSubmitting(true);
+		setSubmitError(null);
+
+		try {
+			const response = await fetch(`${apiUrl}/paddy-farm-survey`, {
+				method: "POST",
+				headers,
+				body: submitFormData,
+			});
+
+			if (!response.ok) {
+				if (response.status === 401) {
+					throw new Error("Authentication failed. Please restart the app.");
 				}
-				// 401 = auth error, don't save for retry (it will keep failing)
-				// 2xx = success, no action needed
-			})
-			.catch(async (error) => {
-				// Network error or non-401 server error - save offline for retry
-				console.error("Background submission failed:", error);
+				throw new Error(`Server error (${response.status}). Please try again.`);
+			}
+
+			// Success!
+			triggerHaptic("success");
+			clearSavedData();
+			setIsSubmitted(true);
+		} catch (error) {
+			const errorMessage =
+				error instanceof Error
+					? error.message
+					: "Submission failed. Please try again.";
+			setSubmitError(errorMessage);
+			triggerHaptic("error");
+
+			// Save offline for retry on network errors (but not auth errors)
+			if (
+				errorMessage.includes("fetch") ||
+				errorMessage.includes("network") ||
+				errorMessage.includes("Server error")
+			) {
 				const offlineData = {
 					dateOfVisit: new Date().toISOString().split("T")[0],
 					gpsLatitude: formData.gpsLatitude,
 					gpsLongitude: formData.gpsLongitude,
 					farmNumber: formData.farmNumber,
 					rainfall: formData.rainfall2days ? "Yes" : "No",
+					rainfallIntensity: formData.rainfallIntensity,
+					soilRoughness: formData.soilRoughness,
+					growthStage: formData.growthStage,
+					overallHealth: formData.overallHealth,
+					waterStatus: formData.waterStatus,
+					fertilizer: formData.fertilizer.used,
+					fertilizerType: getFertilizerTypeText(formData.fertilizer),
+					herbicide: formData.herbicide.used,
+					pesticide: formData.pesticide.used,
+					visibleProblems: getVisibleProblemsText(formData.visibleProblems),
+					stressEvents: getStressEventsText(formData.stressEvents),
 					telegramUserId: user?.id?.toString(),
+					telegramUsername: user?.username,
 				};
 				await saveForOffline(offlineData);
-			});
-
-		// Immediately show success to user and clear saved draft
-		triggerHaptic("success");
-		clearSavedData();
-		setIsSubmitted(true);
+			}
+		} finally {
+			setIsSubmitting(false);
+		}
 	};
 
 	const handleNewForm = () => {
@@ -475,13 +518,30 @@ export function FarmVisitForm() {
 			</main>
 
 			{/* Submit Button */}
-			<div className="fixed bottom-0 left-0 right-0 p-4 bg-background/80 backdrop-blur-xl border-t border-border/50 z-50">
+			<div className="fixed bottom-0 left-0 right-0 p-4 bg-background/80 backdrop-blur-xl border-t border-border/50 z-50 space-y-2">
+				{/* Error Message */}
+				{submitError && (
+					<div className="flex items-center gap-2 p-3 rounded-xl bg-destructive/10 text-destructive text-sm">
+						<AlertCircle className="w-5 h-5 shrink-0" />
+						<span>{submitError}</span>
+					</div>
+				)}
 				<Button
 					onClick={handleSubmit}
+					disabled={isSubmitting}
 					className="w-full h-14 text-lg rounded-2xl font-bold gap-3 shadow-lg shadow-primary/20"
 				>
-					<Send className="w-6 h-6" />
-					{t.common.submit}
+					{isSubmitting ? (
+						<>
+							<Loader2 className="w-6 h-6 animate-spin" />
+							Submitting...
+						</>
+					) : (
+						<>
+							<Send className="w-6 h-6" />
+							{submitError ? "Retry" : t.common.submit}
+						</>
+					)}
 				</Button>
 			</div>
 		</div>

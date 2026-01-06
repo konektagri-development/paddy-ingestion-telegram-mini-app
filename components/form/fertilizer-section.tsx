@@ -5,7 +5,8 @@ import { SectionCard } from "@/components/form/section-card";
 import { triggerHaptic } from "@/components/telegram-provider";
 import { CheckboxGroup } from "@/components/ui/checkbox-group";
 import { ConditionalInput } from "@/components/ui/conditional-input";
-import type { FormData } from "@/lib/form-types";
+import { useYesNoRememberOptions } from "@/lib/form-options";
+import type { FormData, YesNoRemember } from "@/lib/form-types";
 import { useLanguage } from "@/lib/i18n/language-context";
 import { cn } from "@/lib/utils";
 
@@ -16,12 +17,7 @@ interface FertilizerSectionProps {
 
 export function FertilizerSection({ data, onChange }: FertilizerSectionProps) {
 	const { t } = useLanguage();
-
-	const YES_NO_REMEMBER_OPTIONS = [
-		{ value: "yes", label: t.common.yes },
-		{ value: "no", label: t.common.no },
-		{ value: "dontRemember", label: t.common.dontRemember },
-	];
+	const yesNoRememberOptions = useYesNoRememberOptions();
 
 	const FERTILIZER_TYPES = [
 		{ key: "urea", label: t.sections.treatments.urea },
@@ -34,7 +30,7 @@ export function FertilizerSection({ data, onChange }: FertilizerSectionProps) {
 		onChange({
 			fertilizer: {
 				...data.fertilizer,
-				used: val as FormData["fertilizer"]["used"],
+				used: val as YesNoRemember,
 				types: val === "yes" ? data.fertilizer.types : undefined,
 			},
 		});
@@ -90,7 +86,7 @@ export function FertilizerSection({ data, onChange }: FertilizerSectionProps) {
 			<div className="space-y-4">
 				<CheckboxGroup
 					name="fertilizerUsed"
-					options={YES_NO_REMEMBER_OPTIONS}
+					options={yesNoRememberOptions}
 					value={data.fertilizer.used}
 					onChange={(val) => handleFertilizerUsedChange(val as string)}
 				/>
