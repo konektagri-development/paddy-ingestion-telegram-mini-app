@@ -2,9 +2,10 @@
 
 import { Camera, Upload, X } from "lucide-react";
 import Image from "next/image";
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { triggerHaptic } from "@/components/telegram-provider";
 import { Button } from "@/components/ui/button";
+import { CameraModal } from "@/components/ui/camera-modal";
 import type { PhotoData } from "@/lib/form-types";
 import { useLanguage } from "@/lib/i18n/language-context";
 import { cn } from "@/lib/utils";
@@ -23,7 +24,7 @@ export function PhotoUpload({
 	className,
 }: PhotoUploadProps) {
 	const { t } = useLanguage();
-	const cameraRef = useRef<HTMLInputElement>(null);
+	const [isCameraOpen, setIsCameraOpen] = useState(false);
 	const uploadRef = useRef<HTMLInputElement>(null);
 
 	const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -43,14 +44,26 @@ export function PhotoUpload({
 
 		onPhotosChange([...photos, ...newPhotos]);
 
-		// Reset inputs
-		if (cameraRef.current) cameraRef.current.value = "";
+		// Reset input
 		if (uploadRef.current) uploadRef.current.value = "";
+	};
+
+	const handleCameraCapture = (file: File) => {
+		triggerHaptic("light");
+
+		const newPhoto: PhotoData = {
+			id: `photo-${Date.now()}`,
+			file,
+			preview: URL.createObjectURL(file),
+			type: photos.length === 0 ? "farm" : "soil",
+		};
+
+		onPhotosChange([...photos, newPhoto]);
 	};
 
 	const handleTakePhoto = () => {
 		triggerHaptic("light");
-		cameraRef.current?.click();
+		setIsCameraOpen(true);
 	};
 
 	const handleUploadPhoto = () => {
@@ -69,15 +82,14 @@ export function PhotoUpload({
 
 	return (
 		<div className={cn("space-y-4", className)}>
-			{/* Hidden file inputs */}
-			<input
-				ref={cameraRef}
-				type="file"
-				accept="image/*"
-				capture="environment"
-				onChange={handleFileChange}
-				className="hidden"
+			{/* Camera Modal */}
+			<CameraModal
+				isOpen={isCameraOpen}
+				onClose={() => setIsCameraOpen(false)}
+				onCapture={handleCameraCapture}
 			/>
+
+			{/* Hidden file input for upload */}
 			<input
 				ref={uploadRef}
 				type="file"
@@ -104,13 +116,13 @@ export function PhotoUpload({
 							/>
 
 							{/* Remove button */}
-							<Button
-								size="icon"
+							<button
+								type="button"
 								onClick={() => handleRemove(photo.id)}
-								className="absolute top-2 right-2 w-8 h-8 rounded-full bg-red-500/60 text-white hover:bg-red-500/80"
+								className="absolute top-2 right-2 w-8 h-8 rounded-full bg-red-500 text-white hover:bg-red-600 flex items-center justify-center shadow-md"
 							>
-								<X className="w-2 h-2" />
-							</Button>
+								<X className="w-4 h-4" />
+							</button>
 						</div>
 					))}
 				</div>

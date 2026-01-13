@@ -46,9 +46,6 @@ export default function RootLayout({
 }>) {
 	return (
 		<html lang="en" className={notoSans.variable}>
-			<head>
-				<meta name="theme-color" content="#16a34a" />
-			</head>
 			<body
 				className={`${geistSans.variable} ${geistMono.variable} antialiased`}
 			>

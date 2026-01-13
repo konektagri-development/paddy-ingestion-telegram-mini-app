@@ -7,15 +7,25 @@ const DB_NAME = "rice-field-app";
 const DB_VERSION = 1;
 const STORE_NAME = "pending-submissions";
 
+// Cleanup settings
+const MAX_AGE_DAYS = 30;
+const MAX_SUBMISSIONS = 50;
+
 interface PendingSubmission {
 	id: string;
 	timestamp: number;
-	formData: FormData;
+	formData: OfflineFormData;
 	retryCount: number;
 }
 
-interface FormData {
+export interface OfflineFormData {
 	[key: string]: unknown;
+	// Photos stored as base64 for offline sync
+	photos?: Array<{
+		name: string;
+		type: string;
+		base64: string;
+	}>;
 }
 
 // Open IndexedDB connection
@@ -51,7 +61,7 @@ function generateId(): string {
 
 // Save form submission to IndexedDB
 export async function saveOfflineSubmission(
-	formData: FormData,
+	formData: OfflineFormData,
 ): Promise<string> {
 	const db = await openDB();
 
@@ -205,4 +215,66 @@ export async function registerBackgroundSync(): Promise<void> {
 			);
 		}
 	}
+}
+
+/**
+ * Cleanup old submissions:
+ * - Delete submissions older than MAX_AGE_DAYS (30 days)
+ * - Keep only MAX_SUBMISSIONS (50) most recent entries
+ * Should be called on app startup
+ */
+export async function cleanupOldSubmissions(): Promise<number> {
+	const db = await openDB();
+	let deletedCount = 0;
+
+	return new Promise((resolve, reject) => {
+		const transaction = db.transaction(STORE_NAME, "readwrite");
+		const store = transaction.objectStore(STORE_NAME);
+		const index = store.index("timestamp");
+		const request = index.getAll();
+
+		request.onsuccess = async () => {
+			const submissions: PendingSubmission[] = request.result;
+
+			// Calculate cutoff timestamp (30 days ago)
+			const cutoffTime = Date.now() - MAX_AGE_DAYS * 24 * 60 * 60 * 1000;
+
+			// Sort by timestamp (newest first)
+			submissions.sort((a, b) => b.timestamp - a.timestamp);
+
+			const toDelete: string[] = [];
+
+			submissions.forEach((submission, idx) => {
+				// Delete if older than 30 days
+				if (submission.timestamp < cutoffTime) {
+					toDelete.push(submission.id);
+				}
+				// Delete if beyond the max limit of 50
+				else if (idx >= MAX_SUBMISSIONS) {
+					toDelete.push(submission.id);
+				}
+			});
+
+			// Delete identified submissions
+			for (const id of toDelete) {
+				store.delete(id);
+				deletedCount++;
+			}
+
+			if (deletedCount > 0) {
+				console.log(
+					`[OfflineStorage] Cleaned up ${deletedCount} old submissions`,
+				);
+			}
+		};
+
+		request.onerror = () => {
+			reject(request.error);
+		};
+
+		transaction.oncomplete = () => {
+			db.close();
+			resolve(deletedCount);
+		};
+	});
 }

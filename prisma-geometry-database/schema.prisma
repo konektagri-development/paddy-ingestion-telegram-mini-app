@@ -1,0 +1,109 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider   = "prisma-client"
+  output     = "../prisma-geometry-database/geometry-database-client-types"
+  engineType = "client"
+  runtime    = "bun"
+}
+
+datasource db {
+  provider = "postgresql"
+  schemas  = ["geometry"]
+}
+
+// ============================================================================
+// Geometry Schema Models
+// Table names: snake_case
+// Column names: camelCase
+// ============================================================================
+
+model Province {
+  id        String   @id @default(uuid()) @db.Uuid
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  code        String?                                  @unique @db.VarChar(4)
+  localCode   String?                                  @db.VarChar(3)
+  geoboundary Unsupported("geometry(Geometry, 4326)")?
+  nameEn      String                                   @db.VarChar(255)
+  nameKm      String?                                  @db.VarChar(255)
+
+  // Relations
+  districts District[]
+
+  @@map("province")
+  @@schema("geometry")
+}
+
+model District {
+  id        String   @id @default(uuid()) @db.Uuid
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  code        String?                                  @unique @db.VarChar(6)
+  localCode   String?                                  @db.VarChar(3)
+  geoboundary Unsupported("geometry(Geometry, 4326)")?
+  nameEn      String                                   @db.VarChar(255)
+  nameKm      String?                                  @db.VarChar(255)
+
+  // Foreign keys
+  provinceId String @db.Uuid
+
+  // Relations
+  province Province  @relation(fields: [provinceId], references: [id])
+  communes Commune[]
+
+  @@unique([localCode, provinceId])
+  @@map("district")
+  @@schema("geometry")
+}
+
+model Commune {
+  id        String   @id @default(uuid()) @db.Uuid
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  code        String?                                  @unique @db.VarChar(8)
+  localCode   String?                                  @db.VarChar(3)
+  geoboundary Unsupported("geometry(Geometry, 4326)")?
+  nameEn      String                                   @db.VarChar(255)
+  nameKm      String?                                  @db.VarChar(255)
+
+  // Foreign keys
+  districtId String @db.Uuid
+
+  // Relations
+  district District  @relation(fields: [districtId], references: [id])
+  villages Village[]
+
+  @@unique([localCode, districtId])
+  @@map("commune")
+  @@schema("geometry")
+}
+
+model Village {
+  id        String   @id @default(uuid()) @db.Uuid
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  code        String?                                  @unique @db.VarChar(10)
+  localCode   String?                                  @db.VarChar(3)
+  geoboundary Unsupported("geometry(Geometry, 4326)")?
+  nameEn      String                                   @db.VarChar(255)
+  nameKm      String?                                  @db.VarChar(255)
+
+  // Foreign keys
+  communeId String @db.Uuid
+
+  // Relations
+  commune Commune @relation(fields: [communeId], references: [id])
+
+  @@unique([localCode, communeId])
+  @@map("village")
+  @@schema("geometry")
+}

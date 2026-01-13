@@ -1,36 +1,117 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Paddy Ingestion Telegram Mini App
+
+A Telegram Mini App for collecting rice farm survey data, built with Next.js and deployed on Vercel.
+
+## Features
+
+- 📱 **Telegram Mini App** - Native integration with Telegram WebApp SDK
+- 🌐 **Offline-First** - Works offline with IndexedDB, syncs when online
+- 📍 **GPS Location** - Automatic location lookup with administrative division mapping
+- 📸 **Photo Capture** - Camera integration for farm photos
+- 🗂️ **Cloud Sync** - Automatic sync to MinIO storage and Google Drive
+- 🌍 **Multi-language** - Support for Khmer and English
+
+## Tech Stack
+
+- **Framework**: Next.js 16 with App Router
+- **Runtime**: Bun
+- **Database**: PostgreSQL with Prisma ORM
+- **Storage**: MinIO (S3-compatible) + Google Drive
+- **Authentication**: Telegram WebApp Init Data
+- **Styling**: Tailwind CSS
 
 ## Getting Started
 
-First, run the development server:
+### Prerequisites
+
+- [Bun](https://bun.sh/) >= 1.x
+- PostgreSQL databases (Paddy + Geometry)
+- MinIO server (optional)
+- Google Cloud service account (optional)
+
+### Environment Variables
+
+Create a `.env` file:
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
+# Telegram
+TELEGRAM_BOT_TOKEN=your_bot_token
+
+# Databases
+POSTGRES_PADDY_DATABASE_URL=postgresql://...
+POSTGRES_GEOMETRY_DATABASE_URL=postgresql://...
+
+# MinIO (optional)
+MINIO_ENDPOINT=localhost
+MINIO_PORT=9000
+MINIO_ACCESS_KEY=your_key
+MINIO_SECRET_KEY=your_secret
+MINIO_BUCKET=your_bucket
+
+# Google Drive (optional)
+GOOGLE_DRIVE_ROOT_FOLDER_ID=your_folder_id
+GOOGLE_SERVICE_ACCOUNT_PATH=./service-account.json
+GOOGLE_IMPERSONATED_EMAIL=your_email
+
+# Cron
+CRON_SECRET=your_secret
+```
+
+### Installation
+
+```bash
+# Install dependencies
+bun install
+
+# Generate Prisma clients
+bun run postinstall
+
+# Run development server
 bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000) in Telegram WebApp.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### Database Migrations
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+# Paddy database
+cd prisma-paddy-database && bunx prisma migrate dev
 
-## Learn More
+# Geometry database
+cd prisma-geometry-database && bunx prisma migrate dev
+```
 
-To learn more about Next.js, take a look at the following resources:
+## API Endpoints
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/survey-paddy` | POST | Submit survey data |
+| `/api/health` | GET | Health check |
+| `/api/cron/sync-drive` | GET | Sync pending data to Drive |
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Project Structure
 
-## Deploy on Vercel
+```
+├── app/                    # Next.js App Router
+│   ├── api/               # API routes
+│   └── page.tsx           # Main form page
+├── components/            # React components
+├── lib/
+│   ├── server/           # Server-side utilities
+│   │   ├── utils/        # Logger, retry, cache
+│   │   └── survey-paddy/ # Survey service
+│   └── i18n/             # Translations
+├── prisma-paddy-database/ # Prisma schema (survey data)
+└── prisma-geometry-database/ # Prisma schema (admin divisions)
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Deployment
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Deploy to Vercel:
+
+```bash
+vercel
+```
+
+The app includes a daily cron job for syncing data to Google Drive.

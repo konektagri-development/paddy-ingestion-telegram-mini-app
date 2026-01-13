@@ -265,6 +265,3 @@ export const initialFormData: FormData = {
 	},
 	photos: [],
 };
-
-// Legacy export for backwards compatibility (renamed from RAINFALL_OPTIONS)
-export const RAINFALL_OPTIONS = RAINFALL_INTENSITY_OPTIONS;

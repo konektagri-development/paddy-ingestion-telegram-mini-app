@@ -1,0 +1,102 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider   = "prisma-client"
+  output     = "../prisma-paddy-database/paddy-database-client-types"
+  engineType = "client"
+  runtime    = "bun"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ============================================================================
+// Surveyor Model - Stores user identity from auth providers
+// ============================================================================
+
+model Surveyor {
+  id        String   @id @default(uuid()) @db.Uuid
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Mandatory Data
+  surveyorNumber String // e.g., S01
+  locationCode   String // e.g., "PHN-BKK-TSP"
+
+  // Provider authentication info
+  providerName     String // e.g., "telegram"
+  providerUserId   String // unique user id from provider
+  providerUsername String? // Username (optional, may not exist)
+  firstName        String? // First name from provider
+  lastName         String? // Last name from provider
+
+  // Contact info (optional, collected later)
+  phone String?
+  email String?
+
+  // Relations
+  paddys Paddy[]
+
+  @@unique([providerName, providerUserId])
+  @@index([providerName])
+  @@map("surveyor")
+}
+
+// ============================================================================
+// Paddy Model - Stores survey submissions
+// ============================================================================
+
+model Paddy {
+  id        String   @id @default(uuid()) @db.Uuid
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Surveyor relation
+  surveyorId String   @db.Uuid
+  surveyor   Surveyor @relation(fields: [surveyorId], references: [id])
+
+  // Location info
+  farmId       String // Full farm ID: locationCode-surveyorNumber-farmNumber
+  farmNumber   String // User's local farm number (1, 2, 3...)
+  gpsLatitude  Decimal @db.Decimal(10, 7)
+  gpsLongitude Decimal @db.Decimal(10, 7)
+  provinceName String?
+  districtName String?
+  communeName  String?
+
+  // Visit info
+  dateOfVisit DateTime @db.Date
+
+  // Survey data - crop conditions
+  rainfall          String // "Yes", "No"
+  rainfallIntensity String? // "Heavy", "Normal", "Little"
+  soilRoughness     String // "Smooth", "Medium", "Rough"
+  growthStage       String // "Seedling", "Tillering", "Flowering", etc.
+  waterStatus       String // "Consistently flooded", "Mostly wet", etc.
+  overallHealth     String // "Very Good", "Good", "Okay", "Bad"
+  visibleProblems   String // Comma-separated list of problems
+  fertilizer        String // "Yes", "No", "Don't Remember"
+  fertilizerType    String? // "Urea", "NPK", "Organic", etc.
+  herbicide         String // "Yes", "No", "Don't Remember"
+  pesticide         String // "Yes", "No", "Don't Remember"
+  stressEvents      String // "None", "Flood", "Drought", etc.
+
+  // Photo storage
+  photoUrls           String[] // Array of MinIO/S3 URLs
+  photoFolderDriveUrl String? // Google Drive folder link
+
+  // Metadata
+  notes String?
+
+  // Sync Status
+  syncStatus String    @default("pending") // "pending", "synced", "failed"
+  syncError  String?
+  syncedAt   DateTime?
+
+  @@index([surveyorId])
+  @@index([farmId])
+  @@index([dateOfVisit])
+  @@map("paddy")
+}

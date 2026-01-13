@@ -39,3 +39,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+/prisma-paddy-database/paddy-database-client-types
+/prisma-geometry-database/geometry-database-client-types
+/secrets

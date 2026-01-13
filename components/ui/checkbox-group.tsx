@@ -1,8 +1,8 @@
 "use client";
 
 import { Check } from "lucide-react";
+import { triggerHaptic } from "@/components/telegram-provider";
 import { cn } from "@/lib/utils";
-import { triggerHaptic } from "../telegram-provider";
 
 interface Option {
 	value: string;

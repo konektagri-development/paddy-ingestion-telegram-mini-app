@@ -28,10 +28,22 @@ import { Separator } from "@/components/ui/separator";
 import { useFormPersistence } from "@/hooks/use-form-persistence";
 import { useOnlineStatus } from "@/hooks/use-online-status";
 import { useTelegramUser } from "@/hooks/use-telegram-user";
-import type { FormData } from "@/lib/form-types";
+import {
+	getFertilizerTypeText,
+	getGrowthStageText,
+	getHealthText,
+	getRainfallIntensityText,
+	getRainfallText,
+	getSoilText,
+	getStressEventsText,
+	getVisibleProblemsText,
+	getWaterStatusText,
+	getYesNoText,
+} from "@/lib/form-text-utils";
 import { useLanguage } from "@/lib/i18n/language-context";
+import { buildOfflineSubmissionData } from "@/lib/utils/offline-data-builder";
 
-export function FarmVisitForm() {
+export function PaddyVisitForm() {
 	const { t, language, setLanguage } = useLanguage();
 	const { user, initDataRaw } = useTelegramUser();
 	const { isOnline, pendingCount, saveForOffline } = useOnlineStatus();
@@ -123,124 +135,6 @@ export function FarmVisitForm() {
 
 		triggerHaptic("medium");
 
-		// Helper functions for human-readable values
-		const getGrowthStageText = (stage: FormData["growthStage"]): string => {
-			const stageMap: Record<string, string> = {
-				landPrep: "Preparing Field",
-				recentlyTransplanted: "Seedling",
-				tilleringOnset: "Tillering Onset",
-				flowering: "Flowering",
-				ripening: "Ripening",
-				harvestReady: "Harvest Ready",
-				fallow: "Fallow",
-			};
-			return stage ? stageMap[stage] || "N/A" : "N/A";
-		};
-
-		const getHealthText = (health: FormData["overallHealth"]): string => {
-			const healthMap: Record<string, string> = {
-				excellent: "Very Good",
-				good: "Good",
-				fair: "Okay",
-				poor: "Bad",
-			};
-			return health ? healthMap[health] || "N/A" : "N/A";
-		};
-
-		const getSoilText = (soil: FormData["soilRoughness"]): string => {
-			const soilMap: Record<string, string> = {
-				smooth: "Smooth",
-				medium: "Medium",
-				rough: "Rough",
-			};
-			return soil ? soilMap[soil] || "N/A" : "N/A";
-		};
-
-		const getYesNoText = (
-			value: "yes" | "no" | "dontRemember" | null,
-		): string => {
-			if (value === "yes") return "Yes";
-			if (value === "no") return "No";
-			if (value === "dontRemember") return "Don't Remember";
-			return "N/A";
-		};
-
-		const getVisibleProblemsText = (
-			problems: FormData["visibleProblems"],
-		): string => {
-			if (problems.none) return "None";
-			const items: string[] = [];
-			if (problems.yellowing)
-				items.push(
-					`Yellowing${problems.yellowingLocation ? ` (${problems.yellowingLocation})` : ""}`,
-				);
-			if (problems.brownSpots) items.push("Brown Spots");
-			if (problems.wilting) items.push("Wilting");
-			if (problems.lodging) items.push("Lodging");
-			if (problems.pestDamage)
-				items.push(
-					`Pest Damage${problems.pestType ? ` (${problems.pestType})` : ""}`,
-				);
-			if (problems.weedInfestation) items.push("Weed Infestation");
-			if (problems.unevenGrowth) items.push("Uneven Growth");
-			if (problems.other) items.push(problems.otherDescription || "Other");
-			return items.length > 0 ? items.join(", ") : "None";
-		};
-
-		const getWaterStatusText = (status: FormData["waterStatus"]): string => {
-			const statusMap: Record<string, string> = {
-				alwaysFlooded: "Consistently flooded",
-				mostlyWet: "Mostly wet, occasional drying",
-				frequentlyDry: "Often dry",
-				veryDry: "Very dry / cracked",
-			};
-			return status ? statusMap[status] || "N/A" : "N/A";
-		};
-
-		const getFertilizerTypeText = (
-			fertilizer: FormData["fertilizer"],
-		): string => {
-			if (fertilizer.used === "no") return "No";
-			if (fertilizer.used === "dontRemember") return "Don't Remember";
-			if (fertilizer.used === "yes" && fertilizer.types) {
-				const types: string[] = [];
-				if (fertilizer.types.urea) types.push("Urea");
-				if (fertilizer.types.npk) types.push("NPK");
-				if (fertilizer.types.organic) types.push("Organic");
-				if (fertilizer.types.other)
-					types.push(fertilizer.types.otherType || "Other");
-				return types.length > 0 ? `${types.join(", ")}` : "";
-			}
-			return "";
-		};
-
-		const getStressEventsText = (stress: FormData["stressEvents"]): string => {
-			if (stress.none) return "None";
-			const items: string[] = [];
-			if (stress.flood) items.push("Flood");
-			if (stress.drought) items.push("Drought");
-			if (stress.other) items.push(stress.otherDescription || "Other");
-			return items.length > 0 ? items.join(", ") : "None";
-		};
-
-		const getRainfallText = (): string => {
-			if (formData.rainfall2days === true) return "Yes";
-			if (formData.rainfall2days === false) return "No";
-			return "N/A";
-		};
-
-		const getRainfallIntensityText = (): string => {
-			if (formData.rainfallIntensity === null) return "N/A";
-			const intensityMap: Record<string, string> = {
-				heavy: "Heavy Rain",
-				moderate: "Normal Rain",
-				low: "Little Rain",
-			};
-			return formData.rainfallIntensity
-				? intensityMap[formData.rainfallIntensity]
-				: "N/A";
-		};
-
 		// Prepare FormData for submission with photos
 		const submitFormData = new FormData();
 
@@ -249,8 +143,11 @@ export function FarmVisitForm() {
 		submitFormData.append("gpsLatitude", formData.gpsLatitude || "N/A");
 		submitFormData.append("gpsLongitude", formData.gpsLongitude || "N/A");
 		submitFormData.append("farmNumber", formData.farmNumber || "N/A");
-		submitFormData.append("rainfall", getRainfallText());
-		submitFormData.append("rainfallIntensity", getRainfallIntensityText());
+		submitFormData.append("rainfall", getRainfallText(formData.rainfall2days));
+		submitFormData.append(
+			"rainfallIntensity",
+			getRainfallIntensityText(formData.rainfallIntensity),
+		);
 		submitFormData.append("soilRoughness", getSoilText(formData.soilRoughness));
 		submitFormData.append(
 			"growthStage",
@@ -279,11 +176,7 @@ export function FarmVisitForm() {
 			"stressEvents",
 			getStressEventsText(formData.stressEvents),
 		);
-		submitFormData.append("telegramUserId", String(user?.id || 0));
-		submitFormData.append(
-			"telegramUsername",
-			user?.username || user?.firstName || "unknown",
-		);
+		// Note: telegramUserId and telegramUsername are extracted from auth header on server
 
 		// Add photos as files
 		for (const photo of formData.photos) {
@@ -300,33 +193,13 @@ export function FarmVisitForm() {
 			headers["X-Telegram-Init-Data"] = initDataRaw;
 		}
 
-		const apiUrl =
-			process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000/api/v3";
-
 		// If offline, save to IndexedDB for later sync
 		if (!isOnline) {
-			const offlineData = {
-				dateOfVisit: new Date().toISOString().split("T")[0],
-				gpsLatitude: formData.gpsLatitude,
-				gpsLongitude: formData.gpsLongitude,
-				farmNumber: formData.farmNumber,
-				rainfall: formData.rainfall2days ? "Yes" : "No",
-				rainfallIntensity: formData.rainfallIntensity,
-				soilRoughness: formData.soilRoughness,
-				growthStage: formData.growthStage,
-				overallHealth: formData.overallHealth,
-				waterStatus: formData.waterStatus,
-				fertilizer: formData.fertilizer.used,
-				fertilizerType: getFertilizerTypeText(formData.fertilizer),
-				herbicide: formData.herbicide.used,
-				pesticide: formData.pesticide.used,
-				visibleProblems: getVisibleProblemsText(formData.visibleProblems),
-				stressEvents: getStressEventsText(formData.stressEvents),
-				telegramUserId: user?.id?.toString(),
-				telegramUsername: user?.username,
-				// Include init data for authentication when syncing back online
-				_initDataRaw: initDataRaw,
-			};
+			const offlineData = await buildOfflineSubmissionData(
+				formData,
+				user,
+				initDataRaw,
+			);
 
 			await saveForOffline(offlineData);
 			triggerHaptic("success");
@@ -340,7 +213,7 @@ export function FarmVisitForm() {
 		setSubmitError(null);
 
 		try {
-			const response = await fetch(`${apiUrl}/paddy-farm-survey`, {
+			const response = await fetch("/api/survey-paddy", {
 				method: "POST",
 				headers,
 				body: submitFormData,
@@ -371,28 +244,11 @@ export function FarmVisitForm() {
 				errorMessage.includes("network") ||
 				errorMessage.includes("Server error")
 			) {
-				const offlineData = {
-					dateOfVisit: new Date().toISOString().split("T")[0],
-					gpsLatitude: formData.gpsLatitude,
-					gpsLongitude: formData.gpsLongitude,
-					farmNumber: formData.farmNumber,
-					rainfall: formData.rainfall2days ? "Yes" : "No",
-					rainfallIntensity: formData.rainfallIntensity,
-					soilRoughness: formData.soilRoughness,
-					growthStage: formData.growthStage,
-					overallHealth: formData.overallHealth,
-					waterStatus: formData.waterStatus,
-					fertilizer: formData.fertilizer.used,
-					fertilizerType: getFertilizerTypeText(formData.fertilizer),
-					herbicide: formData.herbicide.used,
-					pesticide: formData.pesticide.used,
-					visibleProblems: getVisibleProblemsText(formData.visibleProblems),
-					stressEvents: getStressEventsText(formData.stressEvents),
-					telegramUserId: user?.id?.toString(),
-					telegramUsername: user?.username,
-					// Include init data for authentication when syncing back online
-					_initDataRaw: initDataRaw,
-				};
+				const offlineData = await buildOfflineSubmissionData(
+					formData,
+					user,
+					initDataRaw,
+				);
 				await saveForOffline(offlineData);
 			}
 		} finally {

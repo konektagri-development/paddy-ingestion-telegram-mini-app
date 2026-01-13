@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+	cleanupOldSubmissions,
 	getPendingCount,
 	getPendingSubmissions,
 	registerBackgroundSync,
@@ -33,36 +34,90 @@ export function useOnlineStatus() {
 
 		try {
 			const pending = await getPendingSubmissions();
+			console.log(
+				"[useOnlineStatus] Found",
+				pending.length,
+				"pending submissions",
+			);
 
 			for (const submission of pending) {
 				try {
-					const apiUrl =
-						process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000/api/v3";
-
 					// Extract init data for authentication (stored with offline data)
 					const initDataRaw = submission.formData._initDataRaw as
 						| string
 						| undefined;
 
-					// Prepare form data without the internal _initDataRaw field
-					const { _initDataRaw, ...formDataToSend } = submission.formData;
+					// Extract photos from stored data - ensure proper type
+					const storedPhotos =
+						(submission.formData.photos as Array<{
+							name: string;
+							type: string;
+							base64: string;
+						}>) || [];
 
-					// Build headers with authentication if available
-					const headers: Record<string, string> = {
-						"Content-Type": "application/json",
-					};
+					console.log(
+						"[useOnlineStatus] Syncing submission with",
+						storedPhotos.length,
+						"stored photos",
+					);
+
+					// Prepare form data - remove internal fields
+					const { _initDataRaw, photos, ...textFields } = submission.formData;
+
+					// Build FormData with photos
+					const formDataToSend = new FormData();
+
+					// Add text fields
+					for (const [key, value] of Object.entries(textFields)) {
+						if (typeof value === "string") {
+							formDataToSend.append(key, value);
+						}
+					}
+
+					// Convert base64 photos back to files
+					let photoCount = 0;
+					for (const photo of storedPhotos) {
+						try {
+							// Convert base64 data URL to blob
+							const response = await fetch(photo.base64);
+							const blob = await response.blob();
+							const file = new File([blob], photo.name, { type: photo.type });
+							formDataToSend.append("photos", file, photo.name);
+							photoCount++;
+							console.log("[useOnlineStatus] Converted photo:", photo.name);
+						} catch (photoError) {
+							console.warn(
+								"[useOnlineStatus] Failed to convert photo:",
+								photo.name,
+								photoError,
+							);
+						}
+					}
+					console.log(
+						"[useOnlineStatus] Successfully converted",
+						photoCount,
+						"photos",
+					);
+
+					// Build headers
+					const headers: Record<string, string> = {};
 					if (initDataRaw) {
 						headers["X-Telegram-Init-Data"] = initDataRaw;
 					}
 
-					const response = await fetch(`${apiUrl}/paddy-farm-survey`, {
+					const response = await fetch("/api/survey-paddy", {
 						method: "POST",
 						headers,
-						body: JSON.stringify(formDataToSend),
+						body: formDataToSend,
 					});
 
 					if (response.ok) {
 						await removeSubmission(submission.id);
+						console.log(
+							"[useOnlineStatus] Synced submission successfully with",
+							photoCount,
+							"photos",
+						);
 					} else if (response.status === 401) {
 						// Auth error - remove from queue, retrying won't help
 						await removeSubmission(submission.id);
@@ -118,9 +173,11 @@ export function useOnlineStatus() {
 		};
 	}, [syncPendingSubmissions]);
 
-	// Load pending count on mount and auto-sync if online
+	// Load pending count on mount, cleanup old submissions, and auto-sync if online
 	useEffect(() => {
 		const init = async () => {
+			// Cleanup old submissions (older than 30 days or beyond 50 limit)
+			await cleanupOldSubmissions().catch(() => {});
 			await loadPendingCount();
 			// Auto-sync if online and there are pending submissions
 			if (navigator.onLine) {
