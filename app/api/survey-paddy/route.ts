@@ -1,22 +1,16 @@
-import { after, NextRequest, NextResponse } from "next/server";
-import { createPaddyFarmSurveySchema } from "@/lib/server/survey-paddy/schema";
+import { randomUUID } from "node:crypto";
+import { NextRequest, NextResponse } from "next/server";
 import {
-	performSubmissionSave,
-	prepareSubmissionContext,
-} from "@/lib/server/survey-paddy/service";
-
+	type AuthResult,
+	parseRequestBody,
+	processSurveySubmission,
+} from "@/lib/server/survey-paddy/submission-handler";
 import { validateTelegramWebAppData } from "@/lib/server/telegram-auth";
 
 /**
  * Verify Telegram init data from header
  */
-function verifyTelegramAuth(initDataRaw: string | null): {
-	valid: boolean;
-	userId?: string;
-	username?: string;
-	firstName?: string;
-	lastName?: string;
-} {
+function verifyTelegramAuth(initDataRaw: string | null): AuthResult {
 	const result = validateTelegramWebAppData(initDataRaw);
 
 	if (result.valid) {
@@ -27,104 +21,70 @@ function verifyTelegramAuth(initDataRaw: string | null): {
 				username: result.user.username,
 				firstName: result.user.first_name,
 				lastName: result.user.last_name,
+				provider: "telegram",
 			};
 		}
 		// In development bypass, valid might be true but user undefined
-		return { valid: true };
+		return { valid: true, provider: "telegram" };
 	}
 
-	return { valid: false };
+	return { valid: false, provider: "telegram" };
 }
 
 export async function POST(request: NextRequest) {
+	// Generate unique request ID for tracing
+	const requestId = randomUUID();
+
 	try {
 		// Verify Telegram authentication
 		const initDataRaw = request.headers.get("X-Telegram-Init-Data");
 		const authResult = verifyTelegramAuth(initDataRaw);
 
 		if (!authResult.valid) {
+			console.warn("[API] Unauthorized request", { requestId });
 			return NextResponse.json(
-				{ success: false, message: "Unauthorized" },
+				{ success: false, message: "Unauthorized", requestId },
 				{ status: 401 },
 			);
 		}
 
-		// Parse request body - support both FormData and JSON
-		const contentType = request.headers.get("content-type") || "";
-		const body: Record<string, string> = {};
-		const photos: Array<{
-			buffer: Buffer;
-			originalname: string;
-			mimetype: string;
-		}> = [];
+		// Parse request body
+		const { body, photos } = await parseRequestBody(request);
 
-		if (contentType.includes("multipart/form-data")) {
-			// Parse multipart form data (from live form submission or offline sync)
-			const formData = await request.formData();
+		// Process submission using shared handler
+		const result = await processSurveySubmission(authResult, body, photos);
 
-			for (const [key, value] of formData.entries()) {
-				if (key === "photos" && value instanceof File) {
-					const arrayBuffer = await value.arrayBuffer();
-					photos.push({
-						buffer: Buffer.from(arrayBuffer),
-						originalname: value.name,
-						mimetype: value.type,
-					});
-				} else if (typeof value === "string") {
-					body[key] = value;
-				}
-			}
-		} else {
-			// Parse JSON body
-			const jsonBody = await request.json();
-			for (const [key, value] of Object.entries(jsonBody)) {
-				if (typeof value === "string") {
-					body[key] = value;
-				}
-			}
-		}
-
-		// Validate with Zod schema
-		const parseResult = createPaddyFarmSurveySchema.safeParse(body);
-
-		if (!parseResult.success) {
-			return NextResponse.json(
-				{
-					success: false,
-					message: "Validation failed",
-					errors: parseResult.error.issues.map((issue) => ({
-						path: issue.path.join("."),
-						message: issue.message,
-					})),
-				},
-				{ status: 400 },
-			);
-		}
-
-		const dto = parseResult.data;
-
-		// Process the submission asynchronously
-		// 1. Prepare context (Fast, DB reads only) to get Location Code
-		const context = await prepareSubmissionContext(authResult, dto);
-
-		// 2. Schedule slow work (Uploads + DB Save) for after response
-		after(async () => {
-			await performSubmissionSave(context, dto, photos);
+		console.log("[API] Survey submitted", {
+			requestId,
+			success: result.success,
+			locationCode: result.locationCode,
+			photosUploaded: result.photosUploaded,
 		});
 
-		return NextResponse.json({
-			success: true,
-			message: "Submission received (processing in background)",
-			locationCode: context.locationInfo.locationCode,
-			photosUploaded: photos.length,
-			status: "queued",
-		});
+		return NextResponse.json(
+			{
+				success: result.success,
+				message: result.message,
+				requestId,
+				...(result.locationCode && { locationCode: result.locationCode }),
+				...(result.photosUploaded !== undefined && {
+					photosUploaded: result.photosUploaded,
+				}),
+				...(result.status && { status: result.status }),
+				...(result.errors && { errors: result.errors }),
+			},
+			{ status: result.httpStatus },
+		);
 	} catch (error) {
-		console.error("Error processing paddy farm survey:", error);
+		console.error("[API] Error processing paddy farm survey", {
+			requestId,
+			error: error instanceof Error ? error.message : String(error),
+		});
 		return NextResponse.json(
 			{
 				success: false,
 				message: "Failed to save submission",
+				requestId,
 			},
 			{ status: 500 },
 		);

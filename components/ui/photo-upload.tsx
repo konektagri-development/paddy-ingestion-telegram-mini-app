@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { CameraModal } from "@/components/ui/camera-modal";
 import type { PhotoData } from "@/lib/form-types";
 import { useLanguage } from "@/lib/i18n/language-context";
+import { compressImage } from "@/lib/image-compression";
 import { cn } from "@/lib/utils";
 
 interface PhotoUploadProps {
@@ -25,40 +26,58 @@ export function PhotoUpload({
 }: PhotoUploadProps) {
 	const { t } = useLanguage();
 	const [isCameraOpen, setIsCameraOpen] = useState(false);
+	const [isCompressing, setIsCompressing] = useState(false);
 	const uploadRef = useRef<HTMLInputElement>(null);
 
-	const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+	const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
 		const files = Array.from(e.target.files || []);
 		if (files.length === 0) return;
 
 		triggerHaptic("light");
+		setIsCompressing(true);
 
-		const newPhotos: PhotoData[] = files
-			.slice(0, maxPhotos - photos.length)
-			.map((file, index) => ({
+		try {
+			// Compress files before adding
+			const filesToProcess = files.slice(0, maxPhotos - photos.length);
+			const compressedFiles = await Promise.all(
+				filesToProcess.map((file) => compressImage(file)),
+			);
+
+			const newPhotos: PhotoData[] = compressedFiles.map((file, index) => ({
 				id: `photo-${Date.now()}-${index}`,
 				file,
 				preview: URL.createObjectURL(file),
 				type: photos.length === 0 ? "farm" : "soil",
 			}));
 
-		onPhotosChange([...photos, ...newPhotos]);
+			onPhotosChange([...photos, ...newPhotos]);
+		} finally {
+			setIsCompressing(false);
+		}
 
 		// Reset input
 		if (uploadRef.current) uploadRef.current.value = "";
 	};
 
-	const handleCameraCapture = (file: File) => {
+	const handleCameraCapture = async (file: File) => {
 		triggerHaptic("light");
+		setIsCompressing(true);
 
-		const newPhoto: PhotoData = {
-			id: `photo-${Date.now()}`,
-			file,
-			preview: URL.createObjectURL(file),
-			type: photos.length === 0 ? "farm" : "soil",
-		};
+		try {
+			// Compress camera capture
+			const compressedFile = await compressImage(file);
 
-		onPhotosChange([...photos, newPhoto]);
+			const newPhoto: PhotoData = {
+				id: `photo-${Date.now()}`,
+				file: compressedFile,
+				preview: URL.createObjectURL(compressedFile),
+				type: photos.length === 0 ? "farm" : "soil",
+			};
+
+			onPhotosChange([...photos, newPhoto]);
+		} finally {
+			setIsCompressing(false);
+		}
 	};
 
 	const handleTakePhoto = () => {
@@ -134,6 +153,7 @@ export function PhotoUpload({
 					<Button
 						variant="ghost"
 						onClick={handleTakePhoto}
+						disabled={isCompressing}
 						className={cn(
 							"flex flex-col items-center justify-center gap-2 h-auto p-4 rounded-xl",
 							"border-2 border-dashed border-primary/30 bg-primary/5 hover:bg-primary/10",
@@ -150,6 +170,7 @@ export function PhotoUpload({
 					<Button
 						variant="ghost"
 						onClick={handleUploadPhoto}
+						disabled={isCompressing}
 						className={cn(
 							"flex flex-col items-center justify-center gap-2 h-auto p-4 rounded-xl",
 							"border-2 border-dashed border-border bg-muted/30 hover:bg-muted/50",
@@ -159,7 +180,7 @@ export function PhotoUpload({
 							<Upload className="w-5 h-5 text-muted-foreground" />
 						</div>
 						<span className="text-sm font-medium text-muted-foreground">
-							{t.sections.photos.uploadPhoto}
+							{isCompressing ? "Compressing..." : t.sections.photos.uploadPhoto}
 						</span>
 					</Button>
 				</div>

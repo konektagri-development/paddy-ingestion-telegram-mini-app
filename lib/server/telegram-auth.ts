@@ -98,7 +98,15 @@ export function validateTelegramWebAppData(
 			.update(dataCheckString)
 			.digest("hex");
 
-		if (calculatedHash === hash) {
+		// Use timing-safe comparison to prevent timing attacks
+		const hashBuffer = Buffer.from(hash, "hex");
+		const calculatedBuffer = Buffer.from(calculatedHash, "hex");
+
+		// Ensure both buffers are the same length before comparison
+		if (
+			hashBuffer.length === calculatedBuffer.length &&
+			require("node:crypto").timingSafeEqual(hashBuffer, calculatedBuffer)
+		) {
 			const userStr = params.get("user");
 			let user: TelegramUser | undefined;
 			if (userStr) {

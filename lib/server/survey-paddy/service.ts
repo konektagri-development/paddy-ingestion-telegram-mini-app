@@ -6,6 +6,7 @@ import * as googleDrive from "@/lib/server/google-drive";
 import * as minio from "@/lib/server/minio";
 import { prismaPaddy } from "@/lib/server/prisma-paddy";
 import type { CreatePaddyFarmSurveyDto } from "@/lib/server/survey-paddy/schema";
+import { AuthResult } from "@/lib/server/survey-paddy/submission-handler";
 import { createLogger } from "@/lib/server/utils/logger";
 
 const logger = createLogger("SurveyService");
@@ -217,13 +218,7 @@ export interface SubmissionContext {
  * Stage 1: Prepare Submission Context (Fast, DB reads only)
  */
 export async function prepareSubmissionContext(
-	authResult: {
-		valid: boolean;
-		userId?: string;
-		username?: string;
-		firstName?: string;
-		lastName?: string;
-	},
+	authResult: AuthResult,
 	data: CreatePaddyFarmSurveyDto,
 ): Promise<SubmissionContext> {
 	// Get location info from GPS (required - will throw if not found)
@@ -246,10 +241,10 @@ export async function prepareSubmissionContext(
 	} | null = null;
 
 	if (prismaPaddy) {
-		// Try to find existing surveyor for this user at this location
+		// Try to find existing surveyor for this user
 		surveyor = await prismaPaddy.surveyor.findFirst({
 			where: {
-				providerName: "telegram",
+				providerName: authResult.provider,
 				providerUserId: authResult.userId ?? "",
 			},
 			select: {
@@ -271,11 +266,12 @@ export async function prepareSubmissionContext(
 
 			surveyor = await prismaPaddy.surveyor.create({
 				data: {
-					providerName: "telegram",
+					providerName: authResult.provider,
 					providerUserId: authResult.userId ?? "",
 					providerUsername: authResult.username,
 					firstName: authResult.firstName,
 					lastName: authResult.lastName,
+					phone: authResult.phone,
 					surveyorNumber: newSurveyorNumber,
 					locationCode: gpsLocationCode,
 				},
@@ -289,6 +285,7 @@ export async function prepareSubmissionContext(
 			logger.info("Created new surveyor", {
 				surveyorNumber: surveyor.surveyorNumber,
 				locationCode: surveyor.locationCode,
+				provider: authResult.provider,
 			});
 		}
 	}

@@ -27,6 +27,7 @@ export function BasicInfoSection({ data, onChange }: BasicInfoSectionProps) {
 	const { latitude, longitude, loading, error, getPosition } = useGeolocation();
 
 	const hasLocation = !!(data.gpsLatitude && data.gpsLongitude);
+	const MAX_FIELD_NUMBER = 30;
 
 	useEffect(() => {
 		if (latitude && longitude) {
@@ -101,11 +102,13 @@ export function BasicInfoSection({ data, onChange }: BasicInfoSectionProps) {
 							/>
 						</SelectTrigger>
 						<SelectContent>
-							{Array.from({ length: 20 }, (_, i) => i + 1).map((num) => (
-								<SelectItem key={num} value={num.toString()}>
-									{num}
-								</SelectItem>
-							))}
+							{Array.from({ length: MAX_FIELD_NUMBER }, (_, i) => i + 1).map(
+								(num) => (
+									<SelectItem key={num} value={num.toString()}>
+										{num}
+									</SelectItem>
+								),
+							)}
 						</SelectContent>
 					</Select>
 				</div>

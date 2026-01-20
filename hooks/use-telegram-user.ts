@@ -54,15 +54,8 @@ export function useTelegramUser() {
 				const webAppData = launchParams.tgWebAppData;
 
 				// tgWebAppData contains user info
-				if (webAppData) {
-					const tgUser = webAppData.user as {
-						id: number;
-						first_name: string;
-						last_name?: string;
-						username?: string;
-						language_code?: string;
-						is_premium?: boolean;
-					};
+				if (webAppData?.user) {
+					const tgUser = webAppData.user;
 					setUser({
 						id: tgUser.id,
 						firstName: tgUser.first_name,

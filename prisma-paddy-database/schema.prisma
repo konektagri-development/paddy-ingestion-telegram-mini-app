@@ -98,5 +98,7 @@ model Paddy {
   @@index([surveyorId])
   @@index([farmId])
   @@index([dateOfVisit])
+  @@index([syncStatus, createdAt]) // For cron job queries (pending sync)
+  @@index([surveyorId, dateOfVisit]) // For surveyor report queries
   @@map("paddy")
 }

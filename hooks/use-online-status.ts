@@ -121,8 +121,24 @@ export function useOnlineStatus() {
 					} else if (response.status === 401) {
 						// Auth error - remove from queue, retrying won't help
 						await removeSubmission(submission.id);
+						console.log(
+							"[useOnlineStatus] Removed submission due to auth error (401)",
+						);
+					} else if (response.status === 413) {
+						// Payload too large - remove from queue, data is too big to upload
+						await removeSubmission(submission.id);
+						console.log(
+							"[useOnlineStatus] Removed submission due to payload too large (413)",
+						);
+					} else if (response.status >= 500) {
+						// Server error (500, 502, 503, etc.) - remove from queue
+						// These are usually database/backend issues that retrying won't fix
+						await removeSubmission(submission.id);
+						console.log(
+							`[useOnlineStatus] Removed submission due to server error (${response.status})`,
+						);
 					}
-					// Other errors (500, 503, etc.) - keep in queue for retry
+					// Other 4xx errors - keep in queue, might be temporary
 				} catch (error) {
 					console.error(
 						"[useOnlineStatus] Failed to sync submission:",
@@ -155,21 +171,28 @@ export function useOnlineStatus() {
 			setIsOnline(false);
 		};
 
+		// Handler for service worker sync messages
+		const handleSwMessage = (event: MessageEvent) => {
+			if (event.data?.type === "SYNC_PENDING_SUBMISSIONS") {
+				syncPendingSubmissions();
+			}
+		};
+
 		window.addEventListener("online", handleOnline);
 		window.addEventListener("offline", handleOffline);
 
 		// Listen for service worker sync messages
 		if ("serviceWorker" in navigator) {
-			navigator.serviceWorker.addEventListener("message", (event) => {
-				if (event.data?.type === "SYNC_PENDING_SUBMISSIONS") {
-					syncPendingSubmissions();
-				}
-			});
+			navigator.serviceWorker.addEventListener("message", handleSwMessage);
 		}
 
 		return () => {
 			window.removeEventListener("online", handleOnline);
 			window.removeEventListener("offline", handleOffline);
+			// Clean up service worker listener to prevent memory leak
+			if ("serviceWorker" in navigator) {
+				navigator.serviceWorker.removeEventListener("message", handleSwMessage);
+			}
 		};
 	}, [syncPendingSubmissions]);
 

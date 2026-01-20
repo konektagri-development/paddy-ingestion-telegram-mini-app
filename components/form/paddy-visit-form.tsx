@@ -9,7 +9,7 @@ import {
 	Wheat,
 	WifiOff,
 } from "lucide-react";
-import { useCallback, useState } from "react";
+import { memo, useCallback, useState } from "react";
 import { BasicInfoSection } from "@/components/form/basic-info-section";
 import { FertilizerSection } from "@/components/form/fertilizer-section";
 import { GrowthStageSection } from "@/components/form/growth-stage-section";
@@ -22,7 +22,7 @@ import { RainfallSection } from "@/components/form/rainfall-section";
 import { SoilSection } from "@/components/form/soil-section";
 import { StressSection } from "@/components/form/stress-section";
 import { WaterStatusSection } from "@/components/form/water-status-section";
-import { triggerHaptic } from "@/components/telegram-provider";
+import { triggerHaptic, usePlatform } from "@/components/telegram-provider";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { useFormPersistence } from "@/hooks/use-form-persistence";
@@ -43,11 +43,26 @@ import {
 import { useLanguage } from "@/lib/i18n/language-context";
 import { buildOfflineSubmissionData } from "@/lib/utils/offline-data-builder";
 
+// Memoized form sections to prevent unnecessary re-renders
+const MemoizedBasicInfoSection = memo(BasicInfoSection);
+const MemoizedRainfallSection = memo(RainfallSection);
+const MemoizedSoilSection = memo(SoilSection);
+const MemoizedGrowthStageSection = memo(GrowthStageSection);
+const MemoizedHealthSection = memo(HealthSection);
+const MemoizedProblemsSection = memo(ProblemsSection);
+const MemoizedWaterStatusSection = memo(WaterStatusSection);
+const MemoizedFertilizerSection = memo(FertilizerSection);
+const MemoizedHerbicideSection = memo(HerbicideSection);
+const MemoizedPesticideSection = memo(PesticideSection);
+const MemoizedStressSection = memo(StressSection);
+const MemoizedPhotoSection = memo(PhotoSection);
+
 export function PaddyVisitForm() {
 	const { t, language, setLanguage } = useLanguage();
 	const { user, initDataRaw } = useTelegramUser();
 	const { isOnline, pendingCount, saveForOffline } = useOnlineStatus();
 	const { formData, updateFormData, clearSavedData } = useFormPersistence();
+	const { isWeb } = usePlatform();
 	const [isSubmitted, setIsSubmitted] = useState(false);
 	const [isSubmitting, setIsSubmitting] = useState(false);
 	const [submitError, setSubmitError] = useState<string | null>(null);
@@ -187,10 +202,22 @@ export function PaddyVisitForm() {
 			}
 		}
 
-		// Include Telegram init data for backend validation
+		// Set up headers and API endpoint based on platform
 		const headers: Record<string, string> = {};
-		if (initDataRaw) {
-			headers["X-Telegram-Init-Data"] = initDataRaw;
+		let apiEndpoint = "/api/survey-paddy";
+
+		if (isWeb) {
+			// Web users: use web API with token auth
+			const token = localStorage.getItem("web-auth-token");
+			if (token) {
+				headers.Authorization = `Bearer ${token}`;
+			}
+			apiEndpoint = "/api/survey-paddy-web";
+		} else {
+			// Telegram users: use Telegram init data
+			if (initDataRaw) {
+				headers["X-Telegram-Init-Data"] = initDataRaw;
+			}
 		}
 
 		// If offline, save to IndexedDB for later sync
@@ -213,7 +240,7 @@ export function PaddyVisitForm() {
 		setSubmitError(null);
 
 		try {
-			const response = await fetch("/api/survey-paddy", {
+			const response = await fetch(apiEndpoint, {
 				method: "POST",
 				headers,
 				body: submitFormData,
@@ -222,6 +249,12 @@ export function PaddyVisitForm() {
 			if (!response.ok) {
 				if (response.status === 401) {
 					throw new Error("Authentication failed. Please restart the app.");
+				}
+				if (response.status === 413) {
+					// Payload too large - photos are too big, don't save offline
+					throw new Error(
+						"Photos are too large. Please reduce the number of photos or try again.",
+					);
 				}
 				throw new Error(`Server error (${response.status}). Please try again.`);
 			}
@@ -238,12 +271,15 @@ export function PaddyVisitForm() {
 			setSubmitError(errorMessage);
 			triggerHaptic("error");
 
-			// Save offline for retry on network errors (but not auth errors)
-			if (
+			// Only save offline for actual network failures (not server errors like 500)
+			// Server errors (500) are usually database/backend issues that retrying won't fix
+			const isNetworkError =
 				errorMessage.includes("fetch") ||
 				errorMessage.includes("network") ||
-				errorMessage.includes("Server error")
-			) {
+				errorMessage.includes("Failed to fetch") ||
+				errorMessage.includes("NetworkError");
+
+			if (isNetworkError) {
 				const offlineData = await buildOfflineSubmissionData(
 					formData,
 					user,
@@ -352,29 +388,29 @@ export function PaddyVisitForm() {
 
 			{/* Form Content */}
 			<main className="p-4 space-y-4">
-				<BasicInfoSection data={formData} onChange={updateFormData} />
+				<MemoizedBasicInfoSection data={formData} onChange={updateFormData} />
 				<Separator />
-				<RainfallSection data={formData} onChange={updateFormData} />
+				<MemoizedRainfallSection data={formData} onChange={updateFormData} />
 				<Separator />
-				<SoilSection data={formData} onChange={updateFormData} />
+				<MemoizedSoilSection data={formData} onChange={updateFormData} />
 				<Separator />
-				<GrowthStageSection data={formData} onChange={updateFormData} />
+				<MemoizedGrowthStageSection data={formData} onChange={updateFormData} />
 				<Separator />
-				<HealthSection data={formData} onChange={updateFormData} />
+				<MemoizedHealthSection data={formData} onChange={updateFormData} />
 				<Separator />
-				<ProblemsSection data={formData} onChange={updateFormData} />
+				<MemoizedProblemsSection data={formData} onChange={updateFormData} />
 				<Separator />
-				<WaterStatusSection data={formData} onChange={updateFormData} />
+				<MemoizedWaterStatusSection data={formData} onChange={updateFormData} />
 				<Separator />
-				<FertilizerSection data={formData} onChange={updateFormData} />
+				<MemoizedFertilizerSection data={formData} onChange={updateFormData} />
 				<Separator />
-				<HerbicideSection data={formData} onChange={updateFormData} />
+				<MemoizedHerbicideSection data={formData} onChange={updateFormData} />
 				<Separator />
-				<PesticideSection data={formData} onChange={updateFormData} />
+				<MemoizedPesticideSection data={formData} onChange={updateFormData} />
 				<Separator />
-				<StressSection data={formData} onChange={updateFormData} />
+				<MemoizedStressSection data={formData} onChange={updateFormData} />
 				<Separator />
-				<PhotoSection data={formData} onChange={updateFormData} />
+				<MemoizedPhotoSection data={formData} onChange={updateFormData} />
 			</main>
 
 			{/* Submit Button */}

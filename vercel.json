@@ -1,5 +1,13 @@
 {
 	"bunVersion": "1.x",
+	"functions": {
+		"app/api/survey-paddy/route.ts": {
+			"maxDuration": 60
+		},
+		"app/api/survey-paddy-web/route.ts": {
+			"maxDuration": 60
+		}
+	},
 	"crons": [
 		{
 			"path": "/api/cron/sync-drive",
