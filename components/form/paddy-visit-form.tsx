@@ -154,7 +154,6 @@ export function PaddyVisitForm() {
 		const submitFormData = new FormData();
 
 		// Add text fields
-		submitFormData.append("dateOfVisit", formData.dateOfVisit);
 		submitFormData.append("gpsLatitude", formData.gpsLatitude || "N/A");
 		submitFormData.append("gpsLongitude", formData.gpsLongitude || "N/A");
 		submitFormData.append("farmNumber", formData.farmNumber || "N/A");

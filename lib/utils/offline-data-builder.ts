@@ -33,6 +33,9 @@ async function fileToBase64(file: File): Promise<string> {
 /**
  * Build offline submission data from form data
  * Converts photos to base64 and prepares all fields
+ * @param formData - The form data to convert
+ * @param user - Telegram user info
+ * @param initDataRaw - Telegram init data for auth
  */
 export async function buildOfflineSubmissionData(
 	formData: FormData,
@@ -54,7 +57,6 @@ export async function buildOfflineSubmissionData(
 	);
 
 	return {
-		dateOfVisit: formData.dateOfVisit,
 		gpsLatitude: formData.gpsLatitude,
 		gpsLongitude: formData.gpsLongitude,
 		farmNumber: formData.farmNumber,

@@ -2,7 +2,6 @@ import { z } from "zod";
 
 export const createPaddyFarmSurveySchema = z.object({
 	// Form data - all human-readable strings from frontend
-	dateOfVisit: z.string(),
 	gpsLatitude: z.string(),
 	gpsLongitude: z.string(),
 	farmNumber: z.string(),

@@ -31,6 +31,8 @@ export async function GET(request: NextRequest) {
 			where: {
 				syncStatus: "pending",
 			},
+			take: 10,
+			orderBy: { createdAt: "asc" }, // Process oldest first
 			select: { id: true },
 		});
 

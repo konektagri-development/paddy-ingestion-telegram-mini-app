@@ -27,7 +27,7 @@ export function BasicInfoSection({ data, onChange }: BasicInfoSectionProps) {
 	const { latitude, longitude, loading, error, getPosition } = useGeolocation();
 
 	const hasLocation = !!(data.gpsLatitude && data.gpsLongitude);
-	const MAX_FIELD_NUMBER = 30;
+	const MAX_FIELD_NUMBER = 50;
 
 	useEffect(() => {
 		if (latitude && longitude) {

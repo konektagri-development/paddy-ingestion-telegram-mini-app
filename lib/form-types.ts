@@ -190,7 +190,6 @@ export interface PhotoData {
 
 export interface FormData {
 	farmNumber: string;
-	dateOfVisit: string;
 	gpsLatitude: string;
 	gpsLongitude: string;
 	rainfall2days: boolean | null;
@@ -213,7 +212,6 @@ export interface FormData {
 
 export const initialFormData: FormData = {
 	farmNumber: "",
-	dateOfVisit: new Date().toISOString().split("T")[0],
 	gpsLatitude: "",
 	gpsLongitude: "",
 	rainfall2days: null,
