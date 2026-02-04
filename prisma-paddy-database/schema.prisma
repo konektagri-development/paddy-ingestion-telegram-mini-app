@@ -83,6 +83,11 @@ model Paddy {
   pesticide         String // "Yes", "No", "Don't Remember"
   stressEvents      String // "None", "Flood", "Drought", etc.
 
+  // Weather data (fetched from Open-Meteo)
+  weatherTemperature   Float?
+  weatherHumidity      Float?
+  weatherPrecipitation Float?
+
   // Photo storage
   photoUrls           String[] // Array of MinIO/S3 URLs
   photoFolderDriveUrl String? // Google Drive folder link

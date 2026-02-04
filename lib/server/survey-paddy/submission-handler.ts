@@ -1,9 +1,7 @@
 import { after } from "next/server";
 import { createPaddyFarmSurveySchema } from "@/lib/server/survey-paddy/schema";
-import {
-	performSubmissionSave,
-	prepareSubmissionContext,
-} from "@/lib/server/survey-paddy/service";
+import { prepareSubmissionContext } from "@/lib/server/survey-paddy/service";
+import { enqueueSubmissionSave } from "@/lib/server/survey-paddy/submission-queue";
 
 export type AuthResult = {
 	valid: boolean;
@@ -99,7 +97,7 @@ export async function processSurveySubmission(
 
 	// 2. Schedule slow work (Uploads + DB Save) for after response
 	after(async () => {
-		await performSubmissionSave(context, dto, photos);
+		await enqueueSubmissionSave(context, dto, photos);
 	});
 
 	return {

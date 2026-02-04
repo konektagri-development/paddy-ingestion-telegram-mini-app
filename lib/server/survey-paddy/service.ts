@@ -1,16 +1,45 @@
-import { promises as fs } from "node:fs";
+import { createWriteStream, promises as fs } from "node:fs";
 import * as path from "node:path";
-import ExcelJS from "exceljs";
-import PQueue from "p-queue";
+import { pipeline } from "node:stream/promises";
+import * as ExcelJS from "exceljs";
 import { getLocationCode } from "@/lib/server/administrative-divisions";
 import * as googleDrive from "@/lib/server/google-drive";
 import * as minio from "@/lib/server/minio";
 import { prismaPaddy } from "@/lib/server/prisma-paddy";
 import type { CreatePaddyFarmSurveyDto } from "@/lib/server/survey-paddy/schema";
-import { AuthResult } from "@/lib/server/survey-paddy/submission-handler";
+import type { AuthResult } from "@/lib/server/survey-paddy/submission-handler";
 import { createLogger } from "@/lib/server/utils/logger";
+import { getWeatherAtLocation } from "@/lib/server/weather-service";
 
 const logger = createLogger("SurveyService");
+
+const DRIVE_SYNC_CONCURRENCY = Number.parseInt(
+	process.env.DRIVE_SYNC_CONCURRENCY ?? "2",
+	10,
+);
+
+async function runWithConcurrency<T>(
+	items: T[],
+	limit: number,
+	worker: (item: T) => Promise<void>,
+): Promise<void> {
+	const concurrency =
+		Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : 1;
+	const executing = new Set<Promise<void>>();
+
+	for (const item of items) {
+		const task = (async () => worker(item))();
+		executing.add(task);
+		const cleanup = () => executing.delete(task);
+		task.then(cleanup).catch(cleanup);
+
+		if (executing.size >= concurrency) {
+			await Promise.race(executing);
+		}
+	}
+
+	await Promise.allSettled(executing);
+}
 
 /**
  * Phnom Penh timezone identifier
@@ -30,32 +59,6 @@ function formatDateToPhnomPenh(date: Date): string {
 function formatDateFolderPhnomPenh(date: Date): string {
 	return formatDateToPhnomPenh(date).replace(/-/g, "");
 }
-
-/**
- * Excel headers matching the template file structure
- */
-const EXCEL_HEADERS = [
-	"Farm ID",
-	"Date of Visit",
-	"GPS Latitude",
-	"GPS Longitude",
-	"Surveyor Name",
-	"Surveyor Phone",
-	"Rainfall in last 2 days",
-	"Rainfall intensity (if yes)",
-	"Soil Roughness",
-	"Growth Stage",
-	"Water Status (last 1 week)",
-	"Overall Health",
-	"Visible Problems",
-	"Fertilizer used (last 1 week)",
-	"Fertilizer type (if yes)",
-	"Herbicide used (last 1 week)",
-	"Pesticide used (last 1 week)",
-	"Stress events (last 1 week)",
-	"Photo Google Drive folder",
-	"Surveyor notes",
-];
 
 const TEMPLATE_PATH = path.join(
 	process.cwd(),
@@ -88,6 +91,145 @@ function extractObjectNameFromUrl(url: string): string | null {
 	}
 }
 
+type Coordinate = number | { toString(): string };
+
+type DriveSyncRecord = {
+	id: string;
+	farmId: string;
+	dateOfVisit: Date;
+	gpsLatitude: Coordinate;
+	gpsLongitude: Coordinate;
+	photoUrls: string[] | null;
+	provinceName: string | null;
+	weatherTemperature: number | null;
+	rainfall: string;
+	rainfallIntensity: string | null;
+	soilRoughness: string;
+	growthStage: string;
+	waterStatus: string;
+	overallHealth: string;
+	visibleProblems: string;
+	fertilizer: string;
+	fertilizerType: string | null;
+	herbicide: string;
+	pesticide: string;
+	stressEvents: string;
+	notes: string | null;
+	surveyor: {
+		locationCode: string;
+		firstName?: string | null;
+		lastName?: string | null;
+	} | null;
+};
+
+type ExcelRowGroup = {
+	rowData: (string | number)[];
+	excelFilename: string;
+	excelFolderPath: string;
+};
+
+function buildTempPath(objectName: string): string {
+	const uniqueSuffix = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
+	return path.join("/tmp", `${uniqueSuffix}-${path.basename(objectName)}`);
+}
+
+async function uploadPhotosToDrive(params: {
+	farmId: string;
+	dateFolder: string;
+	photoUrls: string[] | null;
+	provinceName: string | null;
+	contextLabel: string;
+}): Promise<string> {
+	const { farmId, dateFolder, photoUrls, provinceName, contextLabel } = params;
+	let driveFolderLink = "";
+
+	if (
+		!googleDrive.isGoogleDriveAvailable() ||
+		!photoUrls ||
+		photoUrls.length === 0 ||
+		!provinceName
+	) {
+		return driveFolderLink;
+	}
+
+	const folderPath = `4_GT photo and log/${provinceName}/${farmId}/${dateFolder}`;
+
+	try {
+		const folderId = await googleDrive.createFolderPath(folderPath);
+		driveFolderLink = `https://drive.google.com/drive/folders/${folderId}`;
+
+		for (const photoUrl of photoUrls) {
+			const objectName = extractObjectNameFromUrl(photoUrl);
+			if (!objectName || !minio.isMinioAvailable()) continue;
+
+			const tempPath = buildTempPath(objectName);
+
+			try {
+				const stream = await minio.getFileStream(objectName);
+				await pipeline(stream, createWriteStream(tempPath));
+
+				const result = await googleDrive.uploadFile(tempPath, folderPath);
+				if (result.success) {
+					logger.debug("Uploaded photo to Drive", {
+						objectName,
+						context: contextLabel,
+					});
+				}
+			} catch (error) {
+				logger.warn("Failed to upload photo", {
+					photoUrl,
+					context: contextLabel,
+					error: error instanceof Error ? error.message : String(error),
+				});
+			} finally {
+				await fs.unlink(tempPath).catch(() => {});
+			}
+		}
+	} catch (error) {
+		logger.error("Failed to create Drive folder", error, { farmId });
+	}
+
+	return driveFolderLink;
+}
+
+function buildExcelRowGroup(
+	record: DriveSyncRecord,
+	dateFolder: string,
+	driveFolderLink: string,
+): ExcelRowGroup | null {
+	if (!record.provinceName || !record.surveyor) return null;
+
+	const rowData = [
+		record.farmId,
+		formatDateToPhnomPenh(record.dateOfVisit),
+		record.gpsLatitude.toString(),
+		record.gpsLongitude.toString(),
+		record.weatherTemperature ?? "N/A",
+		formatSurveyorName(record.surveyor),
+		"N/A", // Phone
+		record.rainfall,
+		record.rainfallIntensity || "N/A",
+		record.soilRoughness,
+		record.growthStage,
+		record.waterStatus,
+		record.overallHealth,
+		record.visibleProblems,
+		record.fertilizer,
+		record.fertilizerType || "N/A",
+		record.herbicide,
+		record.pesticide,
+		record.stressEvents,
+		driveFolderLink,
+		record.notes || "",
+	];
+
+	return {
+		rowData,
+		excelFilename: `GT-${record.surveyor.locationCode}-${dateFolder}.xlsx`,
+		excelFolderPath: `5_GT text-data/RecurringVisit/${record.provinceName} - Data`,
+	};
+}
+
 /**
  * Format surveyor display name with fallback logic
  * Priority: "firstName lastName" > "N/A"
@@ -114,24 +256,8 @@ function formatSurveyorName(surveyor: {
 async function createWorkbookFromTemplate(): Promise<ExcelJS.Workbook> {
 	const workbook = new ExcelJS.Workbook();
 
-	let templateExists = false;
-	try {
-		await fs.access(TEMPLATE_PATH);
-		templateExists = true;
-	} catch {
-		// Template doesn't exist
-	}
-
-	if (templateExists) {
-		await workbook.xlsx.readFile(TEMPLATE_PATH);
-		logger.debug("Loaded Excel template", { path: TEMPLATE_PATH });
-	} else {
-		const worksheet = workbook.addWorksheet("Entries");
-		worksheet.addRow(EXCEL_HEADERS);
-		logger.warn("Template not found, created new workbook with headers", {
-			path: TEMPLATE_PATH,
-		});
-	}
+	await fs.access(TEMPLATE_PATH);
+	await workbook.xlsx.readFile(TEMPLATE_PATH);
 
 	return workbook;
 }
@@ -210,11 +336,6 @@ async function syncExcelWithDrive(
 		await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
 	}
 }
-
-/**
- * Process a paddy farm survey submission
- */
-// ... imports
 
 export interface SubmissionContext {
 	surveyor: {
@@ -393,6 +514,10 @@ export async function performSubmissionSave(
 	if (prismaPaddy) {
 		const lat = Number.parseFloat(data.gpsLatitude);
 		const lng = Number.parseFloat(data.gpsLongitude);
+		const weather = await getWeatherAtLocation(
+			data.gpsLatitude,
+			data.gpsLongitude,
+		);
 
 		await prismaPaddy.paddy.create({
 			data: {
@@ -417,6 +542,9 @@ export async function performSubmissionSave(
 				herbicide: data.herbicide,
 				pesticide: data.pesticide,
 				stressEvents: data.stressEvents,
+				weatherTemperature: weather?.temperature ?? null,
+				weatherHumidity: weather?.humidity ?? null,
+				weatherPrecipitation: weather?.precipitation ?? null,
 				photoUrls,
 				syncStatus: "pending",
 			},
@@ -450,93 +578,34 @@ export async function processDriveSync(paddyId: string): Promise<boolean> {
 		const {
 			farmId,
 			dateOfVisit,
-			gpsLatitude,
-			gpsLongitude,
 			photoUrls,
 			provinceName,
 		} = record;
-		const surveyor = record.surveyor;
 
 		// Format date as YYYYMMDD in Phnom Penh timezone
 		const dateFolder = formatDateFolderPhnomPenh(dateOfVisit);
 
 		// 1. Upload Photos
-		let driveFolderLink = "";
-
-		if (
-			googleDrive.isGoogleDriveAvailable() &&
-			photoUrls &&
-			photoUrls.length > 0 &&
-			provinceName
-		) {
-			const folderPath = `4_GT photo and log/${provinceName}/${farmId}/${dateFolder}`;
-
-			try {
-				const folderId = await googleDrive.createFolderPath(folderPath);
-				driveFolderLink = `https://drive.google.com/drive/folders/${folderId}`;
-
-				for (const photoUrl of photoUrls) {
-					try {
-						const objectName = extractObjectNameFromUrl(photoUrl);
-						if (objectName && minio.isMinioAvailable()) {
-							const stream = await minio.getFileStream(objectName);
-							const tempPath = path.join("/tmp", path.basename(objectName));
-
-							const chunks: Buffer[] = [];
-							for await (const chunk of stream) {
-								chunks.push(chunk as Buffer);
-							}
-							await fs.writeFile(tempPath, Buffer.concat(chunks));
-
-							const result = await googleDrive.uploadFile(tempPath, folderPath);
-							if (result.success) {
-								logger.debug("Uploaded photo to Drive", { objectName });
-							}
-
-							await fs.unlink(tempPath).catch(() => {});
-						}
-					} catch (error) {
-						logger.warn("Failed to upload photo", {
-							photoUrl,
-							error: error instanceof Error ? error.message : String(error),
-						});
-					}
-				}
-			} catch (error) {
-				logger.error("Failed to create Drive folder", error, { farmId });
-			}
-		}
+		const driveFolderLink = await uploadPhotosToDrive({
+			farmId,
+			dateFolder,
+			photoUrls,
+			provinceName,
+			contextLabel: "single",
+		});
 
 		// 2. Sync Excel
-		if (googleDrive.isGoogleDriveAvailable() && provinceName) {
-			const rowData = [
-				farmId,
-				formatDateToPhnomPenh(dateOfVisit),
-				gpsLatitude.toString(),
-				gpsLongitude.toString(),
-				formatSurveyorName(surveyor),
-				"N/A", // Phone
-				record.rainfall,
-				record.rainfallIntensity || "N/A",
-				record.soilRoughness,
-				record.growthStage,
-				record.waterStatus,
-				record.overallHealth,
-				record.visibleProblems,
-				record.fertilizer,
-				record.fertilizerType || "N/A",
-				record.herbicide,
-				record.pesticide,
-				record.stressEvents,
-				driveFolderLink,
-				record.notes || "",
-			];
-
-			const excelFilename = `GT-${surveyor.locationCode}-${dateFolder}.xlsx`;
-			const excelFolderPath = `5_GT text-data/RecurringVisit/${provinceName} - Data`;
-
-			await syncExcelWithDrive(excelFilename, excelFolderPath, [rowData]);
-			logger.info("Excel updated successfully", { excelFilename, farmId });
+		if (googleDrive.isGoogleDriveAvailable()) {
+			const rowGroup = buildExcelRowGroup(record, dateFolder, driveFolderLink);
+			if (rowGroup) {
+				await syncExcelWithDrive(rowGroup.excelFilename, rowGroup.excelFolderPath, [
+					rowGroup.rowData,
+				]);
+				logger.info("Excel updated successfully", {
+					excelFilename: rowGroup.excelFilename,
+					farmId,
+				});
+			}
 		}
 
 		// Update DB status
@@ -602,133 +671,59 @@ export async function processBatchDriveSync(
 			{ status: "synced" | "failed"; error?: string; driveLink?: string }
 		>();
 
-		// 1. Process Photos & Prepare Excel Data (Parallel per record with Queue)
-		const queue = new PQueue({ concurrency: 2 });
+		// 1. Process Photos & Prepare Excel Data (Parallel per record)
+		const concurrency =
+			Number.isFinite(DRIVE_SYNC_CONCURRENCY) && DRIVE_SYNC_CONCURRENCY > 0
+				? DRIVE_SYNC_CONCURRENCY
+				: 2;
 
-		for (const record of records) {
-			queue.add(async () => {
-				try {
-					if (!record.surveyor) throw new Error("Surveyor not found");
+		await runWithConcurrency(records, concurrency, async (record) => {
+			try {
+				if (!record.surveyor) throw new Error("Surveyor not found");
 
-					const {
-						farmId,
-						dateOfVisit,
-						gpsLatitude,
-						gpsLongitude,
-						photoUrls,
-						provinceName,
-					} = record;
-					const surveyor = record.surveyor;
+		const { farmId, dateOfVisit, photoUrls, provinceName } = record;
 
-					// Format date as YYYYMMDD in Phnom Penh timezone
-					const dateFolder = formatDateFolderPhnomPenh(dateOfVisit);
+				// Format date as YYYYMMDD in Phnom Penh timezone
+				const dateFolder = formatDateFolderPhnomPenh(dateOfVisit);
 
-					// Upload Photos logic
-					let driveFolderLink = "";
-					if (
-						googleDrive.isGoogleDriveAvailable() &&
-						photoUrls &&
-						photoUrls.length > 0 &&
-						provinceName
-					) {
-						const folderPath = `4_GT photo and log/${provinceName}/${farmId}/${dateFolder}`;
+				// Upload Photos logic
+				const driveFolderLink = await uploadPhotosToDrive({
+					farmId,
+					dateFolder,
+					photoUrls,
+					provinceName,
+					contextLabel: "batch",
+				});
 
-						try {
-							const folderId = await googleDrive.createFolderPath(folderPath);
-							driveFolderLink = `https://drive.google.com/drive/folders/${folderId}`;
-
-							for (const photoUrl of photoUrls) {
-								// Upload each photo
-								try {
-									const objectName = extractObjectNameFromUrl(photoUrl);
-									if (objectName && minio.isMinioAvailable()) {
-										const stream = await minio.getFileStream(objectName);
-										const uniquePath = path.join(
-											"/tmp",
-											`${Date.now()}-${path.basename(objectName)}`,
-										);
-										await fs.writeFile(uniquePath, stream); // Stream to file for Drive upload
-
-										const result = await googleDrive.uploadFile(
-											uniquePath,
-											folderPath,
-										);
-										if (result.success) {
-											logger.debug("Uploaded photo to Drive in batch", {
-												objectName,
-											});
-										}
-										await fs.unlink(uniquePath).catch(() => {});
-									}
-								} catch (e) {
-									logger.warn("Failed to upload photo in batch", {
-										photoUrl,
-										error: e instanceof Error ? e.message : String(e),
-									});
-								}
-							}
-						} catch (e) {
-							logger.error("Failed to prep Drive folder in batch", e, {
-								farmId,
-							});
-						}
-					}
-
-					// Prepare Excel Row
-					if (provinceName) {
-						const rowData = [
-							farmId,
-							formatDateToPhnomPenh(dateOfVisit),
-							gpsLatitude.toString(),
-							gpsLongitude.toString(),
-							formatSurveyorName(surveyor),
-							"N/A",
-							record.rainfall,
-							record.rainfallIntensity || "N/A",
-							record.soilRoughness,
-							record.growthStage,
-							record.waterStatus,
-							record.overallHealth,
-							record.visibleProblems,
-							record.fertilizer,
-							record.fertilizerType || "N/A",
-							record.herbicide,
-							record.pesticide,
-							record.stressEvents,
-							driveFolderLink,
-							record.notes || "",
-						];
-
-						// Group by Filename (Location-Date)
-						const excelFilename = `GT-${surveyor.locationCode}-${dateFolder}.xlsx`;
-						const excelFolderPath = `5_GT text-data/RecurringVisit/${provinceName} - Data`;
-						const groupKey = `${excelFolderPath}/${excelFilename}`;
-
+				// Prepare Excel Row
+				if (googleDrive.isGoogleDriveAvailable()) {
+					const rowGroup = buildExcelRowGroup(record, dateFolder, driveFolderLink);
+					if (rowGroup) {
+						const groupKey = `${rowGroup.excelFolderPath}/${rowGroup.excelFilename}`;
 						if (!excelGroups.has(groupKey)) {
 							excelGroups.set(groupKey, []);
 						}
-						excelGroups
-							.get(groupKey)
-							?.push({ record, rowData, folderPath: excelFolderPath });
+						excelGroups.get(groupKey)?.push({
+							record,
+							rowData: rowGroup.rowData,
+							folderPath: rowGroup.excelFolderPath,
+						});
 					}
-
-					// Mark as tentatively synced (final confirmation after Excel write)
-					recordStatus.set(record.id, {
-						status: "synced",
-						driveLink: driveFolderLink,
-					});
-				} catch (error) {
-					console.error(`[Sync] Error processing record ${record.id}:`, error);
-					recordStatus.set(record.id, {
-						status: "failed",
-						error: error instanceof Error ? error.message : "Unknown",
-					});
 				}
-			});
-		}
 
-		// Wait for all queue items to finish
-		await queue.onIdle();
+				// Mark as tentatively synced (final confirmation after Excel write)
+				recordStatus.set(record.id, {
+					status: "synced",
+					driveLink: driveFolderLink,
+				});
+			} catch (error) {
+				console.error(`[Sync] Error processing record ${record.id}:`, error);
+				recordStatus.set(record.id, {
+					status: "failed",
+					error: error instanceof Error ? error.message : "Unknown",
+				});
+			}
+		});
 
 		// 2. Process Excel Batches
 		for (const [groupKey, items] of excelGroups) {

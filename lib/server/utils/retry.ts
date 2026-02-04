@@ -118,8 +118,31 @@ export function isNetworkError(error: unknown): boolean {
 			message.includes("timeout") ||
 			message.includes("econnrefused") ||
 			message.includes("enotfound") ||
-			message.includes("fetch failed")
+			message.includes("fetch failed") ||
+			message.includes("socket") ||
+			message.includes("socket hang up") ||
+			message.includes("connection was closed") ||
+			message.includes("closed unexpectedly") ||
+			message.includes("econnreset") ||
+			message.includes("econnaborted") ||
+			message.includes("ehostunreach") ||
+			message.includes("epipe")
 		);
+	}
+	if (typeof error === "object" && error !== null) {
+		const code = (error as { code?: unknown }).code;
+		if (typeof code === "string") {
+			const normalized = code.toLowerCase();
+			return (
+				normalized === "econnreset" ||
+				normalized === "econnrefused" ||
+				normalized === "econnaborted" ||
+				normalized === "ehostunreach" ||
+				normalized === "etimedout" ||
+				normalized === "enotfound" ||
+				normalized === "epipe"
+			);
+		}
 	}
 	return false;
 }

@@ -190,7 +190,6 @@ export function PaddyVisitForm() {
 			"stressEvents",
 			getStressEventsText(formData.stressEvents),
 		);
-		// Note: telegramUserId and telegramUsername are extracted from auth header on server
 
 		// Add photos as files
 		for (const photo of formData.photos) {
