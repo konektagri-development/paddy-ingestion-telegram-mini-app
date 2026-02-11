@@ -3,8 +3,8 @@ import * as path from "node:path";
 import { pipeline } from "node:stream/promises";
 import * as ExcelJS from "exceljs";
 import { getLocationCode } from "@/lib/server/administrative-divisions";
+import * as gcs from "@/lib/server/gcs";
 import * as googleDrive from "@/lib/server/google-drive";
-import * as minio from "@/lib/server/minio";
 import { prismaPaddy } from "@/lib/server/prisma-paddy";
 import type { CreatePaddyFarmSurveyDto } from "@/lib/server/survey-paddy/schema";
 import type { AuthResult } from "@/lib/server/survey-paddy/submission-handler";
@@ -75,10 +75,44 @@ export interface ProcessResult {
 }
 
 /**
- * Extract object name from MinIO URL
+ * Extract object name from GCS or legacy MinIO-style URLs
  */
 function extractObjectNameFromUrl(url: string): string | null {
 	try {
+		const publicBase = (process.env.GCS_PUBLIC_BASE_URL || "").replace(
+			/\/+$/,
+			"",
+		);
+		if (publicBase && url.startsWith(publicBase)) {
+			return url.slice(publicBase.length).replace(/^\/+/, "") || null;
+		}
+
+		if (url.startsWith("gs://")) {
+			const withoutScheme = url.replace("gs://", "");
+			const parts = withoutScheme.split("/").filter(Boolean);
+			if (parts.length > 1) {
+				return parts.slice(1).join("/");
+			}
+			return null;
+		}
+
+		if (url.startsWith("https://")) {
+			const parsed = new URL(url);
+			const pathParts = parsed.pathname.split("/").filter(Boolean);
+
+			if (parsed.hostname === "storage.googleapis.com") {
+				if (pathParts.length > 1) {
+					return pathParts.slice(1).join("/");
+				}
+			}
+
+			if (parsed.hostname.endsWith(".storage.googleapis.com")) {
+				if (pathParts.length > 0) {
+					return pathParts.join("/");
+				}
+			}
+		}
+
 		if (url.startsWith("/")) {
 			const parts = url.split("/").filter(Boolean);
 			if (parts.length > 1) {
@@ -160,12 +194,12 @@ async function uploadPhotosToDrive(params: {
 
 		for (const photoUrl of photoUrls) {
 			const objectName = extractObjectNameFromUrl(photoUrl);
-			if (!objectName || !minio.isMinioAvailable()) continue;
+			if (!objectName || !gcs.isGcsAvailable()) continue;
 
 			const tempPath = buildTempPath(objectName);
 
 			try {
-				const stream = await minio.getFileStream(objectName);
+				const stream = await gcs.getFileStream(objectName);
 				await pipeline(stream, createWriteStream(tempPath));
 
 				const result = await googleDrive.uploadFile(tempPath, folderPath);
@@ -482,10 +516,10 @@ export async function performSubmissionSave(
 		dateOfVisit,
 	} = context;
 
-	// Upload photos to MinIO with structured path
+	// Upload photos to GCS with structured path
 	const photoUrls: string[] = [];
-	if (minio.isMinioAvailable() && photos.length > 0) {
-		console.log(`[Async] Uploading ${photos.length} photos to MinIO...`);
+	if (gcs.isGcsAvailable() && photos.length > 0) {
+		console.log(`[Async] Uploading ${photos.length} photos to GCS...`);
 
 		const uploadPromises = photos.map(async (photo) => {
 			const uniqueSuffix = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
@@ -494,7 +528,7 @@ export async function performSubmissionSave(
 
 			const objectPath = `survey-paddy/${safeProvince}/${fullFarmId}/${dateFolder}/${safeFilename}`;
 
-			return minio.uploadFileWithFullPath(
+			return gcs.uploadFileWithFullPath(
 				photo.buffer,
 				objectPath,
 				photo.mimetype,
@@ -504,7 +538,7 @@ export async function performSubmissionSave(
 		try {
 			const uploadedFiles = await Promise.all(uploadPromises);
 			photoUrls.push(...uploadedFiles.map((f) => f.url));
-			logger.info("Uploaded photos to MinIO", { count: photoUrls.length });
+			logger.info("Uploaded photos to GCS", { count: photoUrls.length });
 		} catch (error) {
 			logger.error("Photo upload failed, but attempting to save record", error);
 		}
@@ -575,12 +609,7 @@ export async function processDriveSync(paddyId: string): Promise<boolean> {
 		if (!record || !record.surveyor) return false;
 
 		// Reconstruct data needed for Drive upload
-		const {
-			farmId,
-			dateOfVisit,
-			photoUrls,
-			provinceName,
-		} = record;
+		const { farmId, dateOfVisit, photoUrls, provinceName } = record;
 
 		// Format date as YYYYMMDD in Phnom Penh timezone
 		const dateFolder = formatDateFolderPhnomPenh(dateOfVisit);
@@ -598,9 +627,11 @@ export async function processDriveSync(paddyId: string): Promise<boolean> {
 		if (googleDrive.isGoogleDriveAvailable()) {
 			const rowGroup = buildExcelRowGroup(record, dateFolder, driveFolderLink);
 			if (rowGroup) {
-				await syncExcelWithDrive(rowGroup.excelFilename, rowGroup.excelFolderPath, [
-					rowGroup.rowData,
-				]);
+				await syncExcelWithDrive(
+					rowGroup.excelFilename,
+					rowGroup.excelFolderPath,
+					[rowGroup.rowData],
+				);
 				logger.info("Excel updated successfully", {
 					excelFilename: rowGroup.excelFilename,
 					farmId,
@@ -681,7 +712,7 @@ export async function processBatchDriveSync(
 			try {
 				if (!record.surveyor) throw new Error("Surveyor not found");
 
-		const { farmId, dateOfVisit, photoUrls, provinceName } = record;
+				const { farmId, dateOfVisit, photoUrls, provinceName } = record;
 
 				// Format date as YYYYMMDD in Phnom Penh timezone
 				const dateFolder = formatDateFolderPhnomPenh(dateOfVisit);
@@ -697,7 +728,11 @@ export async function processBatchDriveSync(
 
 				// Prepare Excel Row
 				if (googleDrive.isGoogleDriveAvailable()) {
-					const rowGroup = buildExcelRowGroup(record, dateFolder, driveFolderLink);
+					const rowGroup = buildExcelRowGroup(
+						record,
+						dateFolder,
+						driveFolderLink,
+					);
 					if (rowGroup) {
 						const groupKey = `${rowGroup.excelFolderPath}/${rowGroup.excelFilename}`;
 						if (!excelGroups.has(groupKey)) {

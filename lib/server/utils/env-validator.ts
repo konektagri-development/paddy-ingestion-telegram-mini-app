@@ -93,15 +93,19 @@ export function validateEnv(): void {
 		);
 	}
 
-	// MinIO (optional but warn if partially configured)
-	const hasMinioEndpoint = !!process.env.MINIO_ENDPOINT;
-	const hasMinioCredentials =
-		!!process.env.MINIO_ACCESS_KEY && !!process.env.MINIO_SECRET_KEY;
+	// GCS (optional but warn if partially configured)
+	const hasGcsBucket = !!process.env.GCS_BUCKET;
+	const hasGcsCredentials =
+		!!process.env.GCS_KEY_FILE || !!process.env.GOOGLE_APPLICATION_CREDENTIALS;
 
-	if (hasMinioEndpoint !== hasMinioCredentials) {
+	if (hasGcsBucket && !hasGcsCredentials) {
 		logger.warn(
-			"MinIO is partially configured. MINIO_ENDPOINT, MINIO_ACCESS_KEY, and MINIO_SECRET_KEY should all be set.",
+			"GCS bucket configured but no key file provided. Ensure application default credentials are available.",
 		);
+	}
+
+	if (!hasGcsBucket && hasGcsCredentials) {
+		logger.warn("GCS credentials configured but GCS_BUCKET is missing.");
 	}
 
 	// Cron secret (required for production)
@@ -114,8 +118,8 @@ export function validateEnv(): void {
 		logger.warn("Google Drive integration is not configured");
 	}
 
-	if (!hasMinioEndpoint || !hasMinioCredentials) {
-		logger.warn("MinIO storage is not configured");
+	if (!hasGcsBucket) {
+		logger.warn("GCS storage is not configured");
 	}
 
 	// Throw if critical errors
@@ -140,7 +144,7 @@ export function getServiceStatus() {
 		googleDrive:
 			!!process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID &&
 			!!process.env.GOOGLE_SERVICE_ACCOUNT_PATH,
-		minio: !!process.env.MINIO_ACCESS_KEY && !!process.env.MINIO_SECRET_KEY,
+		gcs: !!process.env.GCS_BUCKET,
 		telegram: !!process.env.TELEGRAM_BOT_TOKEN,
 	};
 }

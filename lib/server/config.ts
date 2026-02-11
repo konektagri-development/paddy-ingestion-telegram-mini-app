@@ -34,15 +34,15 @@ export const config = {
 	},
 
 	/**
-	 * MinIO configuration
+	 * GCS configuration
 	 */
-	minio: {
-		/** Maximum retry attempts for MinIO operations */
-		retryAttempts: getOptionalEnvNumber("MINIO_RETRY_ATTEMPTS", 3),
+	gcs: {
+		/** Maximum retry attempts for GCS operations */
+		retryAttempts: getOptionalEnvNumber("GCS_RETRY_ATTEMPTS", 3),
 		/** Request timeout in milliseconds */
-		timeout: getOptionalEnvNumber("MINIO_TIMEOUT_MS", 30000),
+		timeout: getOptionalEnvNumber("GCS_TIMEOUT_MS", 30000),
 		/** Maximum file size in bytes (10MB) */
-		maxFileSize: getOptionalEnvNumber("MINIO_MAX_FILE_SIZE", 10 * 1024 * 1024),
+		maxFileSize: getOptionalEnvNumber("GCS_MAX_FILE_SIZE", 10 * 1024 * 1024),
 	},
 
 	/**
@@ -84,7 +84,7 @@ export const config = {
 export const {
 	database: dbConfig,
 	googleDrive: driveConfig,
-	minio: minioConfig,
+	gcs: gcsConfig,
 	location: locationConfig,
 	api: apiConfig,
 } = config;

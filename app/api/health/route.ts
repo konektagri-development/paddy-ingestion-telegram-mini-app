@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
+import { isGcsAvailable } from "@/lib/server/gcs";
 import { isGoogleDriveAvailable } from "@/lib/server/google-drive";
-import { isMinioAvailable } from "@/lib/server/minio";
 import { prismaGeometry } from "@/lib/server/prisma-geometry";
 import { prismaPaddy } from "@/lib/server/prisma-paddy";
 import { logger } from "@/lib/server/utils/logger";
@@ -14,7 +14,7 @@ interface HealthStatus {
 			geometry: boolean;
 		};
 		storage: {
-			minio: boolean;
+			gcs: boolean;
 			googleDrive: boolean;
 		};
 	};
@@ -65,14 +65,14 @@ async function checkDatabaseHealth(): Promise<{
 export async function GET() {
 	try {
 		const dbHealth = await checkDatabaseHealth();
-		const minioAvailable = isMinioAvailable();
+		const gcsAvailable = isGcsAvailable();
 		const driveAvailable = isGoogleDriveAvailable();
 
 		// Determine overall status
 		const criticalServicesHealthy = dbHealth.paddy && dbHealth.geometry;
 		const allServicesHealthy =
 			criticalServicesHealthy &&
-			(minioAvailable || !process.env.MINIO_ACCESS_KEY) &&
+			(gcsAvailable || !process.env.GCS_BUCKET) &&
 			(driveAvailable || !process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID);
 
 		let status: HealthStatus["status"];
@@ -90,7 +90,7 @@ export async function GET() {
 			services: {
 				database: dbHealth,
 				storage: {
-					minio: minioAvailable,
+					gcs: gcsAvailable,
 					googleDrive: driveAvailable,
 				},
 			},
@@ -101,8 +101,8 @@ export async function GET() {
 			health.details = {};
 			if (!dbHealth.paddy) health.details.paddy = "Database unavailable";
 			if (!dbHealth.geometry) health.details.geometry = "Database unavailable";
-			if (!minioAvailable && process.env.MINIO_ACCESS_KEY)
-				health.details.minio = "Storage not configured";
+			if (!gcsAvailable && process.env.GCS_BUCKET)
+				health.details.gcs = "Storage not configured";
 			if (!driveAvailable && process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID)
 				health.details.googleDrive = "Drive not configured";
 		}
@@ -119,7 +119,7 @@ export async function GET() {
 				timestamp: new Date().toISOString(),
 				services: {
 					database: { paddy: false, geometry: false },
-					storage: { minio: false, googleDrive: false },
+					storage: { gcs: false, googleDrive: false },
 				},
 				details: { error: "Health check failed" },
 			},

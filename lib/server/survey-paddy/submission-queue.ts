@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import * as path from "node:path";
-import { Queue, Worker, type Job } from "bullmq";
+import { type Job, Queue, Worker } from "bullmq";
 import IORedis from "ioredis";
 import type { CreatePaddyFarmSurveyDto } from "@/lib/server/survey-paddy/schema";
 import {
@@ -94,7 +94,8 @@ async function persistPhotos(photos: Photo[]): Promise<{
 	stored: StoredPhoto[];
 }> {
 	const baseDir =
-		process.env.SUBMISSION_QUEUE_TMP_DIR ?? path.join("/tmp", "survey-submissions");
+		process.env.SUBMISSION_QUEUE_TMP_DIR ??
+		path.join("/tmp", "survey-submissions");
 	await fs.mkdir(baseDir, { recursive: true });
 	const tempDir = await fs.mkdtemp(path.join(baseDir, "job-"));
 
@@ -140,7 +141,9 @@ function ensureWorker(): void {
 
 	const enabled = process.env.SURVEY_SUBMISSION_WORKER !== "false";
 	if (!enabled) {
-		logger.info("Submission queue worker disabled via SURVEY_SUBMISSION_WORKER");
+		logger.info(
+			"Submission queue worker disabled via SURVEY_SUBMISSION_WORKER",
+		);
 		return;
 	}
 

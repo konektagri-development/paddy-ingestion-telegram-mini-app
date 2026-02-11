@@ -89,7 +89,7 @@ model Paddy {
   weatherPrecipitation Float?
 
   // Photo storage
-  photoUrls           String[] // Array of MinIO/S3 URLs
+  photoUrls           String[] // Array of GCS URLs
   photoFolderDriveUrl String? // Google Drive folder link
 
   // Metadata

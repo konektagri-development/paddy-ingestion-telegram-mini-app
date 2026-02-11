@@ -8,7 +8,7 @@ A Telegram Mini App for collecting rice farm survey data, built with Next.js and
 - 🌐 **Offline-First** - Works offline with IndexedDB, syncs when online
 - 📍 **GPS Location** - Automatic location lookup with administrative division mapping
 - 📸 **Photo Capture** - Camera integration for farm photos
-- 🗂️ **Cloud Sync** - Automatic sync to MinIO storage and Google Drive
+- 🗂️ **Cloud Sync** - Automatic sync to Google Cloud Storage and Google Drive
 - 🌍 **Multi-language** - Support for Khmer and English
 
 ## Tech Stack
@@ -16,7 +16,7 @@ A Telegram Mini App for collecting rice farm survey data, built with Next.js and
 - **Framework**: Next.js 16 with App Router
 - **Runtime**: Bun
 - **Database**: PostgreSQL with Prisma ORM
-- **Storage**: MinIO (S3-compatible) + Google Drive
+- **Storage**: Google Cloud Storage + Google Drive
 - **Authentication**: Telegram WebApp Init Data
 - **Styling**: Tailwind CSS
 
@@ -26,8 +26,8 @@ A Telegram Mini App for collecting rice farm survey data, built with Next.js and
 
 - [Bun](https://bun.sh/) >= 1.x
 - PostgreSQL databases (Paddy + Geometry)
-- MinIO server (optional)
-- Google Cloud service account (optional)
+- Google Cloud Storage bucket (optional)
+- Google Cloud service account (optional for GCS/Drive)
 
 ### Environment Variables
 
@@ -41,12 +41,11 @@ TELEGRAM_BOT_TOKEN=your_bot_token
 POSTGRES_PADDY_DATABASE_URL=postgresql://...
 POSTGRES_GEOMETRY_DATABASE_URL=postgresql://...
 
-# MinIO (optional)
-MINIO_ENDPOINT=localhost
-MINIO_PORT=9000
-MINIO_ACCESS_KEY=your_key
-MINIO_SECRET_KEY=your_secret
-MINIO_BUCKET=your_bucket
+# Google Cloud Storage (optional)
+GCS_PROJECT_ID=your_project_id
+GCS_BUCKET=your_bucket
+GCS_KEY_FILE=./secrets/gcs-service-account.json
+GCS_PUBLIC_BASE_URL=https://storage.googleapis.com/your_bucket
 
 # Google Drive (optional)
 GOOGLE_DRIVE_ROOT_FOLDER_ID=your_folder_id
