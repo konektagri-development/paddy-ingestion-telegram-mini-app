@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { createWriteStream, promises as fs } from "node:fs";
 import * as path from "node:path";
 import { pipeline } from "node:stream/promises";
@@ -119,6 +120,13 @@ function extractObjectNameFromUrl(url: string): string | null {
 				return parts.slice(1).join("/");
 			}
 		}
+
+		// Handle bucket/path format
+		const bucket = process.env.GCS_BUCKET || "";
+		if (bucket && url.startsWith(`${bucket}/`)) {
+			return url.slice(bucket.length + 1) || null;
+		}
+
 		return null;
 	} catch {
 		return null;
@@ -129,12 +137,10 @@ type Coordinate = number | { toString(): string };
 
 type DriveSyncRecord = {
 	id: string;
-	farmId: string;
 	dateOfVisit: Date;
 	gpsLatitude: Coordinate;
 	gpsLongitude: Coordinate;
 	photoUrls: string[] | null;
-	provinceName: string | null;
 	weatherTemperature: number | null;
 	rainfall: string;
 	rainfallIntensity: string | null;
@@ -149,11 +155,19 @@ type DriveSyncRecord = {
 	pesticide: string;
 	stressEvents: string;
 	notes: string | null;
-	surveyor: {
-		locationCode: string;
-		firstName?: string | null;
-		lastName?: string | null;
-	} | null;
+	paddyField: {
+		fullFieldId: string;
+		fieldNumber: string;
+		provinceName: string | null;
+		surveyor: {
+			id: string;
+			surveyorNumber: string;
+			locationCode: string;
+			providerUsername: string | null;
+			firstName?: string | null;
+			lastName?: string | null;
+		} | null;
+	};
 };
 
 type ExcelRowGroup = {
@@ -231,15 +245,16 @@ function buildExcelRowGroup(
 	dateFolder: string,
 	driveFolderLink: string,
 ): ExcelRowGroup | null {
-	if (!record.provinceName || !record.surveyor) return null;
+	if (!record.paddyField.provinceName || !record.paddyField.surveyor)
+		return null;
 
 	const rowData = [
-		record.farmId,
+		record.paddyField.fullFieldId,
 		formatDateToPhnomPenh(record.dateOfVisit),
 		record.gpsLatitude.toString(),
 		record.gpsLongitude.toString(),
 		record.weatherTemperature ?? "N/A",
-		formatSurveyorName(record.surveyor),
+		formatSurveyorName(record.paddyField.surveyor),
 		"N/A", // Phone
 		record.rainfall,
 		record.rainfallIntensity || "N/A",
@@ -259,8 +274,8 @@ function buildExcelRowGroup(
 
 	return {
 		rowData,
-		excelFilename: `GT-${record.surveyor.locationCode}-${dateFolder}.xlsx`,
-		excelFolderPath: `5_GT text-data/RecurringVisit/${record.provinceName} - Data`,
+		excelFilename: `GT-${record.paddyField.surveyor.locationCode}-${dateFolder}.xlsx`,
+		excelFolderPath: `5_GT text-data/RecurringVisit/${record.paddyField.provinceName} - Data`,
 	};
 }
 
@@ -384,7 +399,8 @@ export interface SubmissionContext {
 		districtName: string | null;
 		communeName: string | null;
 	};
-	fullFarmId: string;
+	fullFieldId: string;
+	fieldNumber: string;
 	safeProvince: string;
 	dateFolder: string;
 	dateOfVisit: Date;
@@ -472,12 +488,12 @@ export async function prepareSubmissionContext(
 	const locationCode = surveyor.locationCode;
 	const surveyorNumber = surveyor.surveyorNumber;
 
-	// Format farm number
-	const farmNum = Number.parseInt(data.farmNumber.replace(/\D/g, ""), 10) || 0;
-	const formattedFarmNumber = `F${String(farmNum).padStart(3, "0")}`;
+	// Format field number
+	const fieldNum = Number.parseInt(data.farmNumber.replace(/\D/g, ""), 10) || 0;
+	const formattedFieldNumber = `F${String(fieldNum).padStart(3, "0")}`;
 
-	// Full Farm ID: locationCode-surveyorNumber-farmNumber
-	const fullFarmId = `${locationCode}-${surveyorNumber}-${formattedFarmNumber}`;
+	// Full Field ID: locationCode-surveyorNumber-farmNumber
+	const fullFieldId = `${locationCode}-${surveyorNumber}-${formattedFieldNumber}`;
 
 	// Format date as YYYYMMDD in Phnom Penh timezone
 	const dateOfVisit = new Date();
@@ -492,7 +508,8 @@ export async function prepareSubmissionContext(
 	return {
 		surveyor,
 		locationInfo,
-		fullFarmId,
+		fullFieldId,
+		fieldNumber: formattedFieldNumber,
 		safeProvince,
 		dateFolder,
 		dateOfVisit,
@@ -510,11 +527,31 @@ export async function performSubmissionSave(
 	const {
 		surveyor,
 		locationInfo,
-		fullFarmId,
+		fullFieldId,
+		fieldNumber,
 		safeProvince,
 		dateFolder,
 		dateOfVisit,
 	} = context;
+
+	// find or create PaddyField
+	let fieldId: string | null = null;
+	if (prismaPaddy) {
+		const field = await prismaPaddy.paddyField.upsert({
+			where: { fullFieldId },
+			update: {},
+			create: {
+				surveyorId: surveyor.id,
+				fullFieldId,
+				fieldNumber,
+				provinceName: locationInfo.provinceName,
+				districtName: locationInfo.districtName,
+				communeName: locationInfo.communeName,
+			},
+			select: { id: true },
+		});
+		fieldId = field.id;
+	}
 
 	// Upload photos to GCS with structured path
 	const photoUrls: string[] = [];
@@ -526,7 +563,7 @@ export async function performSubmissionSave(
 			const ext = path.extname(photo.originalname) || ".jpg";
 			const safeFilename = `${path.basename(photo.originalname, ext)}-${uniqueSuffix}${ext}`;
 
-			const objectPath = `survey-paddy/${safeProvince}/${fullFarmId}/${dateFolder}/${safeFilename}`;
+			const objectPath = `survey-paddy/${safeProvince}/${fullFieldId}/${dateFolder}/${safeFilename}`;
 
 			return gcs.uploadFileWithFullPath(
 				photo.buffer,
@@ -544,50 +581,42 @@ export async function performSubmissionSave(
 		}
 	}
 
-	// Save to database
-	if (prismaPaddy) {
-		const lat = Number.parseFloat(data.gpsLatitude);
-		const lng = Number.parseFloat(data.gpsLongitude);
+	// Save survey to database
+	if (prismaPaddy && fieldId) {
 		const weather = await getWeatherAtLocation(
 			data.gpsLatitude,
 			data.gpsLongitude,
 		);
 
-		await prismaPaddy.paddy.create({
-			data: {
-				surveyorId: surveyor.id,
-				farmId: fullFarmId,
-				farmNumber: data.farmNumber,
-				gpsLatitude: lat,
-				gpsLongitude: lng,
-				provinceName: locationInfo.provinceName,
-				districtName: locationInfo.districtName,
-				communeName: locationInfo.communeName,
-				dateOfVisit: dateOfVisit,
-				rainfall: data.rainfall,
-				rainfallIntensity: data.rainfallIntensity,
-				soilRoughness: data.soilRoughness,
-				growthStage: data.growthStage,
-				waterStatus: data.waterStatus,
-				overallHealth: data.overallHealth,
-				visibleProblems: data.visibleProblems,
-				fertilizer: data.fertilizer,
-				fertilizerType: data.fertilizerType,
-				herbicide: data.herbicide,
-				pesticide: data.pesticide,
-				stressEvents: data.stressEvents,
-				weatherTemperature: weather?.temperature ?? null,
-				weatherHumidity: weather?.humidity ?? null,
-				weatherPrecipitation: weather?.precipitation ?? null,
-				photoUrls,
-				syncStatus: "pending",
-			},
-		});
+		const lat = Number.parseFloat(data.gpsLatitude);
+		const lng = Number.parseFloat(data.gpsLongitude);
+		const surveyId = randomUUID();
+
+		await prismaPaddy.$executeRaw`
+			INSERT INTO paddy_survey (
+				id, "createdAt", "updatedAt", "fieldId", "dateOfVisit", 
+				location, rainfall, "rainfallIntensity", "soilRoughness", 
+				"growthStage", "waterStatus", "overallHealth", "visibleProblems", 
+				fertilizer, "fertilizerType", herbicide, pesticide, "stressEvents", 
+				"weatherTemperature", "weatherHumidity", "weatherPrecipitation", 
+				"photoUrls", "syncStatus"
+			) VALUES (
+				${surveyId}::uuid, NOW(), NOW(), ${fieldId}::uuid, ${dateOfVisit}::date,
+				ST_SetSRID(ST_Point(${lng}, ${lat}), 4326), 
+				${data.rainfall}, ${data.rainfallIntensity}, ${data.soilRoughness},
+				${data.growthStage}, ${data.waterStatus}, ${data.overallHealth}, ${data.visibleProblems},
+				${data.fertilizer}, ${data.fertilizerType}, ${data.herbicide}, ${data.pesticide}, ${data.stressEvents},
+				${weather?.temperature ?? null}, ${weather?.humidity ?? null}, ${weather?.precipitation ?? null},
+				${photoUrls}, 'pending'
+			)
+		`;
 		logger.info("Survey saved to database with pending sync status", {
-			farmId: fullFarmId,
+			fullFieldId,
 		});
 	} else {
-		logger.warn("Paddy database not available - survey not saved to DB");
+		logger.warn(
+			"Paddy database or field not available - survey not saved to DB",
+		);
 	}
 
 	return { success: true, photosUploaded: photoUrls.length };
@@ -601,22 +630,37 @@ export async function processDriveSync(paddyId: string): Promise<boolean> {
 	if (!prismaPaddy) return false;
 
 	try {
-		const record = await prismaPaddy.paddy.findUnique({
-			where: { id: paddyId },
-			include: { surveyor: true },
-		});
+		const records = await prismaPaddy.$queryRaw<any[]>`
+			SELECT 
+				s.*,
+				ST_X(s.location) as "gpsLongitude",
+				ST_Y(s.location) as "gpsLatitude",
+				f."fullFieldId",
+				f."provinceName",
+				f.id as "paddyField_id",
+				sur.id as "surveyor_id",
+				sur."surveyorNumber",
+				sur."locationCode",
+				sur."providerUsername"
+			FROM paddy_survey s
+			JOIN paddy_field f ON s."fieldId" = f.id
+			JOIN surveyor sur ON f."surveyorId" = sur.id
+			WHERE s.id = ${paddyId}::uuid
+			LIMIT 1
+		`;
 
-		if (!record || !record.surveyor) return false;
+		const record = records[0];
+		if (!record) return false;
 
 		// Reconstruct data needed for Drive upload
-		const { farmId, dateOfVisit, photoUrls, provinceName } = record;
+		const { dateOfVisit, photoUrls, fullFieldId, provinceName } = record;
 
 		// Format date as YYYYMMDD in Phnom Penh timezone
 		const dateFolder = formatDateFolderPhnomPenh(dateOfVisit);
 
 		// 1. Upload Photos
 		const driveFolderLink = await uploadPhotosToDrive({
-			farmId,
+			farmId: fullFieldId,
 			dateFolder,
 			photoUrls,
 			provinceName,
@@ -625,7 +669,29 @@ export async function processDriveSync(paddyId: string): Promise<boolean> {
 
 		// 2. Sync Excel
 		if (googleDrive.isGoogleDriveAvailable()) {
-			const rowGroup = buildExcelRowGroup(record, dateFolder, driveFolderLink);
+			// Map raw record to DriveSyncRecord format
+			const syncRecord: DriveSyncRecord = {
+				...record,
+				gpsLatitude: record.gpsLatitude,
+				gpsLongitude: record.gpsLongitude,
+				paddyField: {
+					fullFieldId: record.fullFieldId,
+					fieldNumber: record.fieldNumber,
+					provinceName: record.provinceName,
+					surveyor: {
+						id: record.surveyor_id,
+						surveyorNumber: record.surveyorNumber,
+						locationCode: record.locationCode,
+						providerUsername: record.providerUsername,
+					},
+				},
+			};
+
+			const rowGroup = buildExcelRowGroup(
+				syncRecord,
+				dateFolder,
+				driveFolderLink,
+			);
 			if (rowGroup) {
 				await syncExcelWithDrive(
 					rowGroup.excelFilename,
@@ -634,13 +700,13 @@ export async function processDriveSync(paddyId: string): Promise<boolean> {
 				);
 				logger.info("Excel updated successfully", {
 					excelFilename: rowGroup.excelFilename,
-					farmId,
+					fullFieldId,
 				});
 			}
 		}
 
 		// Update DB status
-		await prismaPaddy.paddy.update({
+		await prismaPaddy.paddySurvey.update({
 			where: { id: paddyId },
 			data: {
 				syncStatus: "synced",
@@ -655,7 +721,7 @@ export async function processDriveSync(paddyId: string): Promise<boolean> {
 
 		// Update DB with error
 		if (prismaPaddy) {
-			await prismaPaddy.paddy.update({
+			await prismaPaddy.paddySurvey.update({
 				where: { id: paddyId },
 				data: {
 					syncStatus: "failed",
@@ -680,11 +746,25 @@ export async function processBatchDriveSync(
 	const results = { success: 0, failed: 0 };
 
 	try {
-		// Fetch all records with surveyor info
-		const records = await prismaPaddy.paddy.findMany({
-			where: { id: { in: paddyIds } },
-			include: { surveyor: true },
-		});
+		// Fetch all records with field info using raw SQL to get coordinates
+		const records = await prismaPaddy.$queryRaw<any[]>`
+			SELECT 
+				s.*,
+				ST_X(s.location) as "gpsLongitude",
+				ST_Y(s.location) as "gpsLatitude",
+				f."fullFieldId",
+				f."provinceName",
+				sur.id as "surveyor_id",
+				sur."surveyorNumber",
+				sur."locationCode",
+				sur."providerUsername",
+				sur."firstName",
+				sur."lastName"
+			FROM paddy_survey s
+			JOIN paddy_field f ON s."fieldId" = f.id
+			JOIN surveyor sur ON f."surveyorId" = sur.id
+			WHERE s.id = ANY(${paddyIds.map((id) => id)}::uuid[])
+		`;
 
 		// Map for grouping Excel writes: Filename -> Array of { record, rowData }
 		const excelGroups = new Map<
@@ -710,16 +790,16 @@ export async function processBatchDriveSync(
 
 		await runWithConcurrency(records, concurrency, async (record) => {
 			try {
-				if (!record.surveyor) throw new Error("Surveyor not found");
+				const { dateOfVisit, photoUrls, fullFieldId, provinceName } = record;
 
-				const { farmId, dateOfVisit, photoUrls, provinceName } = record;
+				if (!fullFieldId) throw new Error("Field identity not found");
 
 				// Format date as YYYYMMDD in Phnom Penh timezone
 				const dateFolder = formatDateFolderPhnomPenh(dateOfVisit);
 
 				// Upload Photos logic
 				const driveFolderLink = await uploadPhotosToDrive({
-					farmId,
+					farmId: fullFieldId,
 					dateFolder,
 					photoUrls,
 					provinceName,
@@ -728,8 +808,28 @@ export async function processBatchDriveSync(
 
 				// Prepare Excel Row
 				if (googleDrive.isGoogleDriveAvailable()) {
+					// Map raw record to DriveSyncRecord format expected by buildExcelRowGroup
+					const syncRecord: DriveSyncRecord = {
+						...record,
+						gpsLatitude: record.gpsLatitude,
+						gpsLongitude: record.gpsLongitude,
+						paddyField: {
+							fullFieldId: record.fullFieldId,
+							fieldNumber: record.fieldNumber,
+							provinceName: record.provinceName,
+							surveyor: {
+								id: record.surveyor_id,
+								surveyorNumber: record.surveyorNumber,
+								locationCode: record.locationCode,
+								providerUsername: record.providerUsername,
+								firstName: record.firstName,
+								lastName: record.lastName,
+							},
+						},
+					};
+
 					const rowGroup = buildExcelRowGroup(
-						record,
+						syncRecord,
 						dateFolder,
 						driveFolderLink,
 					);
@@ -787,7 +887,7 @@ export async function processBatchDriveSync(
 		for (const [id, statusInfo] of recordStatus) {
 			try {
 				if (statusInfo.status === "synced") {
-					await prismaPaddy.paddy.update({
+					await prismaPaddy.paddySurvey.update({
 						where: { id },
 						data: {
 							syncStatus: "synced",
@@ -797,7 +897,7 @@ export async function processBatchDriveSync(
 					});
 					results.success++;
 				} else {
-					await prismaPaddy.paddy.update({
+					await prismaPaddy.paddySurvey.update({
 						where: { id },
 						data: {
 							syncStatus: "failed",

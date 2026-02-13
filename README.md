@@ -52,10 +52,6 @@ GOOGLE_DRIVE_ROOT_FOLDER_ID=your_folder_id
 GOOGLE_SERVICE_ACCOUNT_PATH=./service-account.json
 GOOGLE_IMPERSONATED_EMAIL=your_email
 
-# Cron
-CRON_SECRET=your_secret
-```
-
 ### Installation
 
 ```bash

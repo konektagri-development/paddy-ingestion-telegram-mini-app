@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 
-// Single admin credential for web login
-const ADMIN_USERNAME = "agentvinod";
-const ADMIN_PASSWORD = "123456";
+// Single admin credential for web login (from env)
+const ADMIN_USERNAME = process.env.ADMIN_USERNAME;
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 
 // Simple token generation (no expiration)
 function generateToken(surveyorName: string, phoneNumber: string): string {
@@ -34,6 +34,13 @@ export async function POST(request: NextRequest) {
 					message: "Surveyor name and phone number are required",
 				},
 				{ status: 400 },
+			);
+		}
+
+		if (!ADMIN_USERNAME || !ADMIN_PASSWORD) {
+			return NextResponse.json(
+				{ success: false, message: "Admin credentials are not configured" },
+				{ status: 500 },
 			);
 		}
 

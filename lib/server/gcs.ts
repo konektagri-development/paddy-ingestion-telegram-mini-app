@@ -13,7 +13,6 @@ const GCS_PROJECT_ID = process.env.GCS_PROJECT_ID || "";
 const GCS_BUCKET = process.env.GCS_BUCKET || "";
 const GCS_KEY_FILE =
 	process.env.GCS_KEY_FILE || process.env.GOOGLE_APPLICATION_CREDENTIALS || "";
-const GCS_PUBLIC_BASE_URL = process.env.GCS_PUBLIC_BASE_URL || "";
 
 // Lazy initialization of GCS client
 let gcsClient: Storage | null = null;
@@ -57,11 +56,7 @@ export interface UploadedFile {
 }
 
 function buildObjectUrl(objectName: string): string {
-	if (GCS_PUBLIC_BASE_URL) {
-		const base = GCS_PUBLIC_BASE_URL.replace(/\/+$/, "");
-		return `${base}/${objectName}`;
-	}
-	return `gs://${GCS_BUCKET}/${objectName}`;
+	return `${GCS_BUCKET}/${objectName}`;
 }
 
 /**

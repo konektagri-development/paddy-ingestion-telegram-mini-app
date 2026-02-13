@@ -37,7 +37,7 @@ model Surveyor {
   email String?
 
   // Relations
-  paddys Paddy[]
+  paddyFields PaddyField[]
 
   @@unique([providerName, providerUserId])
   @@index([providerName])
@@ -45,10 +45,10 @@ model Surveyor {
 }
 
 // ============================================================================
-// Paddy Model - Stores survey submissions
+// PaddyField Model - Represents a physical paddy farm field
 // ============================================================================
 
-model Paddy {
+model PaddyField {
   id        String   @id @default(uuid()) @db.Uuid
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -57,17 +57,42 @@ model Paddy {
   surveyorId String   @db.Uuid
   surveyor   Surveyor @relation(fields: [surveyorId], references: [id])
 
-  // Location info
-  farmId       String // Full farm ID: locationCode-surveyorNumber-farmNumber
-  farmNumber   String // User's local farm number (1, 2, 3...)
-  gpsLatitude  Decimal @db.Decimal(10, 7)
-  gpsLongitude Decimal @db.Decimal(10, 7)
+  // Field Identity
+  fullFieldId String @unique // locationCode-surveyorNumber-farmNumber
+  fieldNumber String // User's local field number (1, 2, 3...)
+
+  // Static Location Info (taken from first visit)
   provinceName String?
   districtName String?
   communeName  String?
 
+  // Spatial Data
+  boundary Unsupported("geometry(Polygon, 4326)")?
+
+  // Relations
+  surveys PaddySurvey[]
+
+  @@index([surveyorId])
+  @@index([fullFieldId])
+  @@map("paddy_field")
+}
+
+// ============================================================================
+// PaddySurvey Model - Stores individual visit submissions
+// ============================================================================
+
+model PaddySurvey {
+  id        String   @id @default(uuid()) @db.Uuid
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Field relation
+  fieldId    String     @db.Uuid
+  paddyField PaddyField @relation(fields: [fieldId], references: [id])
+
   // Visit info
-  dateOfVisit DateTime @db.Date
+  dateOfVisit DateTime                             @db.Date
+  location    Unsupported("geometry(Point, 4326)")
 
   // Survey data - crop conditions
   rainfall          String // "Yes", "No"
@@ -100,10 +125,8 @@ model Paddy {
   syncError  String?
   syncedAt   DateTime?
 
-  @@index([surveyorId])
-  @@index([farmId])
+  @@index([fieldId])
   @@index([dateOfVisit])
   @@index([syncStatus, createdAt]) // For cron job queries (pending sync)
-  @@index([surveyorId, dateOfVisit]) // For surveyor report queries
-  @@map("paddy")
+  @@map("paddy_survey")
 }

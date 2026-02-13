@@ -174,7 +174,7 @@ function ensureWorker(): void {
 	globalForBull.submissionWorker.on("failed", (job, error) => {
 		logger.error("Submission job failed", error, {
 			jobId: job?.id,
-			farmId: job?.data?.context?.fullFarmId,
+			fullFieldId: job?.data?.context?.fullFieldId,
 		});
 	});
 }
@@ -191,11 +191,11 @@ export async function enqueueSubmissionSave(
 
 	if (!queue) {
 		logger.warn("Submission queue unavailable; processing inline", {
-			farmId: context.fullFarmId,
+			fullFieldId: context.fullFieldId,
 		});
 		performSubmissionSave(context, data, photos).catch((error) => {
 			logger.error("Inline submission save failed", error, {
-				farmId: context.fullFarmId,
+				fullFieldId: context.fullFieldId,
 			});
 		});
 		return jobId;
@@ -223,11 +223,11 @@ export async function enqueueSubmissionSave(
 			await cleanupTempDir(tempDir);
 		}
 		logger.error("Failed to enqueue submission job", error, {
-			farmId: context.fullFarmId,
+			fullFieldId: context.fullFieldId,
 		});
 		performSubmissionSave(context, data, photos).catch((innerError) => {
 			logger.error("Fallback submission save failed", innerError, {
-				farmId: context.fullFarmId,
+				fullFieldId: context.fullFieldId,
 			});
 		});
 		return jobId;

@@ -108,11 +108,6 @@ export function validateEnv(): void {
 		logger.warn("GCS credentials configured but GCS_BUCKET is missing.");
 	}
 
-	// Cron secret (required for production)
-	if (process.env.NODE_ENV === "production" && !process.env.CRON_SECRET) {
-		errors.push("CRON_SECRET is required in production");
-	}
-
 	// Log warnings for optional services
 	if (!hasGoogleDriveFolder || !hasGoogleServiceAccount) {
 		logger.warn("Google Drive integration is not configured");
