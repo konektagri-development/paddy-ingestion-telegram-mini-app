@@ -139,7 +139,7 @@ export function GrowthStageSection({
 								)}
 							</div>
 
-							{/* Content */}
+						
 							<div className="p-3">
 								<h4
 									className={cn(
