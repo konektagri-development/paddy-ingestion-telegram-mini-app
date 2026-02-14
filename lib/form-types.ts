@@ -196,6 +196,10 @@ export interface FormData {
 	rainfallIntensity?: RainfallIntensity;
 	soilRoughness: SoilRoughness | null;
 
+    transplantDate?: string;
+    fallowStartDate?: string;
+
+	
 	growthStage: GrowthStage | null;
 
 	overallHealth: OverallHealth | null;

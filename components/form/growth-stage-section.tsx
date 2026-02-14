@@ -4,6 +4,7 @@ import { Check, Sprout } from "lucide-react";
 import Image from "next/image";
 import { SectionCard } from "@/components/form/section-card";
 import { triggerHaptic } from "@/components/telegram-provider";
+import { DateInput } from "@/components/ui/Date input";
 import type { FormData, GrowthStage } from "@/lib/form-types";
 import { useLanguage } from "@/lib/i18n/language-context";
 import { cn } from "@/lib/utils";
@@ -36,6 +37,8 @@ export function GrowthStageSection({
 		label: string;
 		description: string;
 		image: string;
+		hasDateInput?: boolean;
+		dateInputLabel?: string;
 	}> = [
 		{
 			value: "landPrep",
@@ -48,6 +51,8 @@ export function GrowthStageSection({
 			label: t.sections.growth.recentlyTransplanted.label,
 			description: t.sections.growth.recentlyTransplanted.description,
 			image: GROWTH_STAGE_IMAGES.recentlyTransplanted,
+			hasDateInput: true,
+			dateInputLabel: "Transplant date",
 		},
 		{
 			value: "tilleringOnset",
@@ -78,8 +83,16 @@ export function GrowthStageSection({
 			label: t.sections.growth.fallow.label,
 			description: t.sections.growth.fallow.description,
 			image: GROWTH_STAGE_IMAGES.fallow,
+			hasDateInput: true,
+			dateInputLabel: "Fallow start date",
 		},
 	];
+
+	const handleDateChange = (field: string, value: string) => {
+		onChange({
+			[field]: value,
+		});
+	};
 
 	return (
 		<SectionCard
@@ -92,67 +105,88 @@ export function GrowthStageSection({
 				{GROWTH_STAGES.map((option) => {
 					const isSelected = data.growthStage === option.value;
 					return (
-						<div
-							key={option.value}
-							onClick={() => {
-								triggerHaptic("light");
-								onChange({ growthStage: option.value });
-							}}
-							onKeyDown={(e) => {
-								if (e.key === "Enter" || e.key === " ") {
-									e.preventDefault();
+						<div key={option.value} className="flex flex-col">
+							<div
+								onClick={() => {
+									triggerHaptic("light");
 									onChange({ growthStage: option.value });
-								}
-							}}
-							role="button"
-							tabIndex={0}
-							className={cn(
-								"relative group cursor-pointer rounded-xl border-2 transition-all duration-200 overflow-hidden outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-								isSelected
-									? "border-primary bg-primary/5 shadow-md"
-									: "border-border hover:border-primary/50 hover:shadow-sm",
-							)}
-						>
-							{/* Image with gradient overlay */}
-							<div className="aspect-[4/3] relative w-full bg-muted">
-								<Image
-									src={option.image}
-									alt={option.label}
-									fill
-									className="object-cover"
-								/>
-								{/* Active overlay */}
-								<div
-									className={cn(
-										"absolute inset-0 transition-opacity duration-200",
-										isSelected
-											? "bg-primary/10"
-											: "opacity-0 group-hover:bg-black/5",
-									)}
-								/>
-
-								{/* Check indicator */}
-								{isSelected && (
-									<div className="absolute top-2 right-2 bg-primary text-primary-foreground rounded-full p-1 shadow-sm animate-in zoom-in-50">
-										<Check className="w-3 h-3" strokeWidth={3} />
-									</div>
+								}}
+								onKeyDown={(e) => {
+									if (e.key === "Enter" || e.key === " ") {
+										e.preventDefault();
+										onChange({ growthStage: option.value });
+									}
+								}}
+								role="button"
+								tabIndex={0}
+								className={cn(
+									"relative group cursor-pointer rounded-xl border-2 transition-all duration-200 overflow-hidden outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+									isSelected
+										? "border-primary bg-primary/5 shadow-md"
+										: "border-border hover:border-primary/50 hover:shadow-sm",
 								)}
+							>
+								{/* Image with gradient overlay */}
+								<div className="aspect-[4/3] relative w-full bg-muted">
+									<Image
+										src={option.image}
+										alt={option.label}
+										fill
+										className="object-cover"
+									/>
+									{/* Active overlay */}
+									<div
+										className={cn(
+											"absolute inset-0 transition-opacity duration-200",
+											isSelected
+												? "bg-primary/10"
+												: "opacity-0 group-hover:bg-black/5",
+										)}
+									/>
+
+									{/* Check indicator */}
+									{isSelected && (
+										<div className="absolute top-2 right-2 bg-primary text-primary-foreground rounded-full p-1 shadow-sm animate-in zoom-in-50">
+											<Check className="w-3 h-3" strokeWidth={3} />
+										</div>
+									)}
+								</div>
+
+								{/* Content */}
+								<div className="p-3">
+									<h4
+										className={cn(
+											"font-medium text-sm leading-tight mb-1",
+											isSelected ? "text-primary" : "text-foreground",
+										)}
+									>
+										{option.label}
+									</h4>
+									<p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed">
+										{option.description}
+									</p>
+								</div>
 							</div>
 
-							{/* Content */}
-							<div className="p-3">
-								<h4
-									className={cn(
-										"font-medium text-sm leading-tight mb-1",
-										isSelected ? "text-primary" : "text-foreground",
-									)}
-								>
-									{option.label}
-								</h4>
-								<p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed">
-									{option.description}
-								</p>
-							</div>
+							{/* Date input for specific growth stages */}
+							{option.hasDateInput && isSelected && (
+								<DateInput
+									value={
+										option.value === "recentlyTransplanted"
+											? data.transplantDate || ""
+											: data.fallowStartDate || ""
+									}
+									onChange={(value) =>
+										handleDateChange(
+											option.value === "recentlyTransplanted"
+												? "transplantDate"
+												: "fallowStartDate",
+											value,
+										)
+									}
+									placeholder={option.dateInputLabel}
+								/>
+							)}
 						</div>
 					);
 				})}
